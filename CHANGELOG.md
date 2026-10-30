@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0 — 2026-10-31
+
+- Added immutable telemetry events, bounded queues and explicit DEMO/LIVE sources.
+- Added JSON file, JSONL/FIFO and HTTP polling adapters with TTL, backoff and honest missing values.
+- Added read-only Git snapshots and an explicit asynchronous task runner with actual exit codes.
+- Added opt-in JSONL/gzip recording, rotation, checkpoints and isolated read-only replay.
+- Validation: 35 focused data/recording/repository/task tests plus milestone regression.
+
 ## 0.5.0 — 2026-10-31
 
 - Unified visual descriptors, render functions, captions and binding metadata.
