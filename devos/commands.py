@@ -34,6 +34,7 @@ def catalog():
                ("scope-next", "Math scope / next function", "Animate the next mathematical function; synthetic graphics, not measured signals."),
                ("scope-auto", "Math scope / auto-cycle", "Toggle automatic rotation of synthetic mathematical functions."),
                ("scope-zoom", "Math scope / fullscreen", "Open the mathematical panel at full size; Esc returns."),
+               ("visual-fullscreen", "Visual / fullscreen", "Expand the current 3D animation; Y or Esc returns."),
                ("source-folder", "Source / choose project folder", "Read random code excerpts from a local project; U opens the path editor."),
                ("binding-settings", "Visual Lab / edit binding", "Edit source, ranges, linear/log transform, smoothing and missing policy."),
                ("director", "Spectator / event director", "Toggle finite event-driven visual changes; terminal focus stays yours."),

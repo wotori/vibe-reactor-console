@@ -61,6 +61,8 @@ class Renderer:
             canvas.put(2, 1, "Enlarge terminal to at least 48 x 16.", "accent")
             canvas.put(4, 1, "Ctrl+] dashboard / Q goes to child" if session.terminal_focused
                        else "F2 terminal | TAB options | Q quit", "muted")
+        elif session.fullscreen_panel is not None:
+            self.fullscreen(session, rows, cols)
         else:
             render_screen(self, session, rows, cols)
             self.footer(session, rows, cols)
@@ -82,6 +84,21 @@ class Renderer:
             self.picker(session, rows, cols)
         canvas.cursor(self.cursor_position if not session.menu_open else None)
         screen.refresh()
+
+    def fullscreen(self, session, rows, cols):
+        if session.fullscreen_panel == "scope":
+            self.scope(session, Rect(0, 0, rows - 1, cols))
+            controls = "X / ESC back | F next function | P choose / auto | SPACE pause | Q exit?"
+        else:
+            spec = ANIMATION_BY_ID[session.animation]
+            provenance = "REPLAY" if session.screen_id == "replay" and session.replay_status else session.telemetry.mode.upper()
+            self.canvas.put(0, 2, "VISUAL FULLSCREEN / " + spec.title + " / " + provenance, "main", True, cols - 4)
+            for (x, y), pixel in render_animation(session.animation, session.visual_time, cols - 2, rows - 3,
+                                                  session.protocol, session.visual_parameters()).items():
+                self.canvas.put(y + 1, x + 1, pixel.char, pixel.tone, pixel.bold)
+            self.canvas.put(rows - 2, 2, spec.caption, "muted", limit=cols - 4)
+            controls = "Y / ESC back | G graphics | A auto | X math | SPACE pause | Q exit?"
+        self.canvas.put(rows - 1, 0, controls, "accent", limit=cols - 1)
 
     def cockpit(self, session, rows, cols):
         sim = session.sim
@@ -224,6 +241,7 @@ class Renderer:
             "1 Cockpit / 2 Visual Lab / 3 Arena / 4 Site / 5 Body / 6 Atlas / 7 Replay",
             "P searchable commands / TAB scenes + options / G visual picker",
             "O next panel / Z zoom / V signal binding / I intensity / D Atlas view",
+            "X math fullscreen / Y visual fullscreen / same key or ESC returns",
             "L binding settings: source/ranges/linear/log/EMA/missing; S saves",
             "U choose SOURCE project folder / N random file / R reread source",
             "F2 or Ctrl+] terminal input / F4 other terminal / F3 source",
@@ -302,7 +320,7 @@ class Renderer:
                 c.put(i, 2, line, "main", True)
             c.put(0, 40, sim.mode.title + " // " + sim.mode.subtitle, "accent", True, cols - 42)
             c.put(1, 40, "workspace: " + sim.mode.workspace, "muted", limit=cols - 42)
-            controls = "[TAB] SCENES/OPTIONS  [G] VISUAL: {}  [F2] TERMINAL".format(session.animation.upper())
+            controls = "[G] {} [Y] FULL  [X] MATH FULL  [TAB] OPTIONS".format(session.animation.upper())
             c.put(2, 40, controls, "main", limit=cols - 42)
             label = sim.source.kind + " CODE / SIM BUILD" if sim.snippet.source_path else "SIMULATED"
             fps = "{:.1f}".format(session.actual_fps) if session.actual_fps else "--"
@@ -443,7 +461,9 @@ class Renderer:
         mode = session.effective_scope_mode
         spec = SCOPE_BY_ID[mode]
         auto = " / AUTO" if session.options.scope_auto_cycle else ""
-        p = self.canvas.panel(rect, "06 / MATH SCOPE", spec.title.upper() + auto)
+        hint = "X BACK" if session.fullscreen_panel == "scope" else "X FULL"
+        detail = spec.title.upper() + auto + " / " + hint if rect.width >= 65 else hint + auto
+        p = self.canvas.panel(rect, "06 / MATH SCOPE", detail)
         caption = spec.formula
         detail = scope_caption(mode, session.visual_time)
         if p.width >= 100 and detail != caption:

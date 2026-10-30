@@ -76,6 +76,8 @@ class Session:
         self.screen_id = screen
         self.focused_panel = "preview" if screen == "visual-lab" else SCREEN_BY_ID[screen].panels[0]
         self.zoomed = False
+        self.fullscreen_panel = None
+        self._fullscreen_restore = None
         self.lab_binding, self.intensity = lab_binding, intensity
         self.data_mode, self.arena_mode = data_mode, arena_mode
         self.telemetry = TelemetrySnapshot()
@@ -142,6 +144,28 @@ class Session:
     def next_scope(self):
         ids = tuple(item.id for item in SCOPES)
         self.choose_scope_mode(ids[(ids.index(self.effective_scope_mode) + 1) % len(ids)])
+
+    def exit_fullscreen(self):
+        if self.fullscreen_panel is not None:
+            if self._fullscreen_restore is not None:
+                self.focused_panel, self.zoomed = self._fullscreen_restore
+            else:
+                self.zoomed = False
+            self.fullscreen_panel = self._fullscreen_restore = None
+
+    def toggle_fullscreen(self, panel):
+        if panel not in ("scope", "visual"):
+            raise ValueError("Unknown fullscreen panel: " + str(panel))
+        if self.fullscreen_panel == panel:
+            self.exit_fullscreen()
+            return
+        if self.fullscreen_panel is None:
+            self._fullscreen_restore = (self.focused_panel, self.zoomed)
+        self.fullscreen_panel = panel
+        self.zoomed = True
+        self.terminal_focused = False
+        if self.screen_id == "cockpit":
+            self.focused_panel = panel
 
     @property
     def protocol(self):
@@ -278,6 +302,7 @@ class Session:
         return search(self.palette_query)
 
     def choose_screen(self, screen):
+        self.fullscreen_panel = self._fullscreen_restore = None
         self.screen_id = screen
         self.focused_panel = "preview" if screen == "visual-lab" else SCREEN_BY_ID[screen].panels[0]
         self.zoomed = self.terminal_focused = False
@@ -534,12 +559,14 @@ class Session:
                 self.palette_open = False
             return
         if action == "terminal-right":
+            self.exit_fullscreen()
             self.terminal_slot = "right" if self.terminal_slot == "left" else "left"
             self.focused_panel = "terminal-" + self.terminal_slot if self.screen_id == "arena" else "source"
             self.terminal_focused = False
             self.handle("terminal")
             return
         if action == "terminal":
+            self.exit_fullscreen()
             if self.screen_id == "replay":
                 self.terminal_focused = False
                 self.status_message = "Replay is read-only; switch screens for a live terminal."
@@ -554,6 +581,7 @@ class Session:
                 self.pending_actions.append("terminal-start")
             return
         if action == "source":
+            self.exit_fullscreen()
             self.terminal_visible = not self.terminal_visible
             self.terminal_focused = False
             return
@@ -619,13 +647,17 @@ class Session:
                 self.status_message = "Wait for a completed public reply before handing it off."
             return
         if action in ("panel", "panel-prev"):
+            self.exit_fullscreen()
             panels = SCREEN_BY_ID[self.screen_id].panels
             self.focused_panel = panels[(panels.index(self.focused_panel) + (-1 if action == "panel-prev" else 1)) % len(panels)]
             if self.focused_panel.startswith("terminal-"):
                 self.terminal_slot = self.focused_panel.split("-", 1)[1]
             return
         if action == "zoom":
-            self.zoomed = not self.zoomed
+            if self.fullscreen_panel is not None:
+                self.exit_fullscreen()
+            else:
+                self.zoomed = not self.zoomed
             return
         if action == "binding":
             values = tuple(BINDING_BY_ID)
@@ -680,7 +712,9 @@ class Session:
                 self.menu_kind = None
             return
         if action == "escape":
-            if self.zoomed:
+            if self.fullscreen_panel is not None:
+                self.exit_fullscreen()
+            elif self.zoomed:
                 self.zoomed = False
             else:
                 self.request_quit()
@@ -726,10 +760,15 @@ class Session:
         elif action == "scope-auto":
             self.cycle_option("scope_auto_cycle")
         elif action == "scope-zoom":
-            self.choose_screen("cockpit")
+            if self.screen_id != "replay":
+                self.choose_screen("cockpit")
             self.options.scope = True
-            self.focused_panel = "scope"
-            self.zoomed = True
+            if self.fullscreen_panel != "scope":
+                self.toggle_fullscreen("scope")
+        elif action == "scope-fullscreen":
+            self.toggle_fullscreen("scope")
+        elif action == "visual-fullscreen":
+            self.toggle_fullscreen("visual")
         elif action == "auto":
             self.cycle_option("auto_cycle")
 

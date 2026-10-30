@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.1 — 2026-10-31
+
+- Added direct X/Y fullscreen for all eight Math Scope modes and all twelve main animations, using the complete viewport with a small controls bar.
+- Repeat the same key or press Esc/Z to return to the previous panel/zoom; F switches functions and G selects visuals while fullscreen remains open.
+- Added visible fullscreen hints and searchable commands; existing Math scope fullscreen now opens the immersive view.
+- Fullscreen keeps terminal processes, source state, native/black backgrounds and Replay ownership intact; child input and quit confirmation retain their own X/Y behavior.
+- Validation: 445 passing tests covering all visuals/functions, full viewport rendering, Replay, input ownership and real curses; an additional real tmux check preserved the shell state across fullscreen. Fullscreen is temporary view state, separate from saved visual preferences.
+
 ## 0.12.0 — 2026-10-31
 
 - Replaced the fixed sine panel with Math Scope: harmonic interference, moving parabola/tangent, Lissajous, Fourier synthesis, Gaussian wave packet, polar rose, Archimedean spiral and epicycles.

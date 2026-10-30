@@ -22,6 +22,8 @@ def action_for_key(key):
         ord("g"): "animation", ord("G"): "animation", ord("c"): "consumer", ord("C"): "consumer",
         ord("w"): "scope", ord("W"): "scope", ord("a"): "auto", ord("A"): "auto",
         ord("f"): "scope-next", ord("F"): "scope-next",
+        ord("x"): "scope-fullscreen", ord("X"): "scope-fullscreen",
+        ord("y"): "visual-fullscreen", ord("Y"): "visual-fullscreen",
         ord("j"): "down", ord("k"): "up", ord("p"): "palette", ord("P"): "palette",
         ord("/"): "palette",
         ord("l"): "binding-settings", ord("L"): "binding-settings",
@@ -58,7 +60,7 @@ def terminal_key(key):
 
 def terminal_rectangles(screen, session):
     rows, cols = screen.getmaxyx()
-    if rows < 16 or cols < 48:
+    if rows < 16 or cols < 48 or session.fullscreen_panel is not None:
         return ()
     if session.screen_id == "cockpit":
         layout = arrange(max(16, rows), max(48, cols), session.sim.mode.hardware,
@@ -122,6 +124,7 @@ def dispatch_key(session, runtime, key):
         session.help_open = False
         return
     if key == 29 or action in ("terminal", "source", "terminal-right"):
+        session.exit_fullscreen()
         if session.screen_id == "replay":
             session.status_message = "Replay is read-only; switch screens for a live terminal."
             return
