@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:devos:spec:event:1",
+  "title": "Proposed DEV/OS normalized event envelope v1",
+  "type": "object",
+  "required": ["schema_version", "id", "topic", "source_id", "source_session_id", "sequence", "mode", "observed_at", "received_at", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "topic": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z0-9_-]+)+$", "maxLength": 128},
+    "source_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "source_session_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "sequence": {"type": "integer", "minimum": 0},
+    "mode": {"enum": ["demo", "live", "replay"]},
+    "origin_mode": {"enum": ["demo", "live"]},
+    "observed_at": {"type": ["string", "null"], "format": "date-time"},
+    "received_at": {"type": "string", "format": "date-time"},
+    "recorded_offset_ms": {"type": "integer", "minimum": 0},
+    "payload": {"type": "object"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"mode": {"const": "replay"}}},
+      "then": {"required": ["origin_mode"]}
+    },
+    {
+      "if": {"properties": {"topic": {"const": "metric.sample"}}},
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["key", "value", "unit", "quality", "window_seconds"],
+            "additionalProperties": false,
+            "properties": {
+              "key": {"type": "string", "minLength": 1, "maxLength": 128},
+              "value": {"type": ["number", "null"]},
+              "unit": {"type": "string", "minLength": 1, "maxLength": 32},
+              "quality": {"enum": ["ok", "stale", "unavailable", "error"]},
+              "window_seconds": {"type": ["integer", "null"], "minimum": 1}
+            },
+            "allOf": [
+              {
+                "if": {"properties": {"quality": {"enum": ["unavailable", "error"]}}},
+                "then": {"properties": {"value": {"type": "null"}}}
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

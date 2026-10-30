@@ -5,6 +5,8 @@ import subprocess
 import sys
 import unittest
 
+from devos import __version__
+
 
 PROJECT = Path(__file__).resolve().parents[1]
 
@@ -15,7 +17,7 @@ class CliTests(unittest.TestCase):
                               capture_output=True, text=True, timeout=5)
 
     def test_help_version_and_modes_need_no_terminal(self):
-        for option, expected in (("--help", "TAB:"), ("--version", "DEV/OS 0.4.0"),
+        for option, expected in (("--help", "TAB:"), ("--version", "DEV/OS " + __version__),
                                  ("--list-modes", "BARE METAL")):
             with self.subTest(option=option):
                 result = self.invoke(option)

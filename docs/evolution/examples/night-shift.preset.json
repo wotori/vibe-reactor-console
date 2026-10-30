@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "id": "night-shift-demo",
+  "title": "Night Shift / reference preset",
+  "screen": "cockpit",
+  "scene": "ekza",
+  "theme": "neon",
+  "background": "terminal",
+  "fps_cap": 60,
+  "intensity": "calm",
+  "visual": {"id": "gravity-well", "seed": 41},
+  "panels": [
+    {"id": "work", "widget": "source", "priority": 100},
+    {"id": "world", "widget": "visual", "priority": 60},
+    {"id": "facts", "widget": "metrics", "priority": 40},
+    {"id": "events", "widget": "event-tape", "priority": 80}
+  ],
+  "providers": [
+    {"id": "demo-site", "type": "demo", "scenario": "night-shift", "seed": 41}
+  ],
+  "bindings": [
+    {
+      "source_id": "demo-site",
+      "metric": "site.active_sessions_60s",
+      "expected_unit": "sessions",
+      "target": "world.particle_count",
+      "transform": "log1p",
+      "input_range": [0, 1000],
+      "output_range": [0, 200],
+      "clamp": true,
+      "smoothing_seconds": 0.8,
+      "missing": "fade-and-label"
+    }
+  ]
+}

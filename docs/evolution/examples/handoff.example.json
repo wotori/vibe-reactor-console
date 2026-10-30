@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "mission_id": "demo-avatar-parser",
+  "task_id": "review-parser-v1",
+  "message_id": "handoff-demo-003",
+  "reply_to": "handoff-demo-002",
+  "sequence": 3,
+  "from": "codex-builder",
+  "to": "claude-reviewer",
+  "type": "review_request",
+  "summary": "Реализован демонстрационный parser контракта ассета. Проверь границы revision и обработку отсутствующего профиля.",
+  "expected_result": "Замечания с конкретными сценариями или approved для указанных критериев. Не изменять рабочую копию builder.",
+  "acceptance": [
+    "Пустая revision отклоняется",
+    "Потребитель проверяет точную rendition",
+    "Отсутствующий профиль не считается подтверждённым"
+  ],
+  "artifacts": [
+    {
+      "id": "demo-patch-parser-v1",
+      "kind": "patch",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "base": "demo-base-not-a-real-commit"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "replay-demo-evt-1",
+  "topic": "metric.sample",
+  "source_id": "replay-night-shift",
+  "source_session_id": "replay-run-1",
+  "sequence": 1,
+  "mode": "replay",
+  "origin_mode": "demo",
+  "observed_at": "2026-10-31T12:00:00Z",
+  "received_at": "2026-10-31T12:00:00Z",
+  "recorded_offset_ms": 0,
+  "payload": {
+    "key": "site.active_sessions_60s",
+    "value": 28,
+    "unit": "sessions",
+    "quality": "ok",
+    "window_seconds": 60
+  }
+}
