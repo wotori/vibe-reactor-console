@@ -15,6 +15,7 @@ from .telemetry import TelemetrySnapshot
 from .bindings import BindingConfig, BindingEngine, BINDING_BY_ID
 from .director import EventDirector
 from .math_scope import SCOPES, SCOPE_BY_ID
+from .games import GAME_SPECS, GAME_BY_ID, create_game
 
 
 PALETTES = {
@@ -78,6 +79,10 @@ class Session:
         self.zoomed = False
         self.fullscreen_panel = None
         self._fullscreen_restore = None
+        self.arcade_choice = 0
+        self.arcade_game_id = None
+        self.arcade_games = {}
+        self.arcade_viewport_ready = True
         self.lab_binding, self.intensity = lab_binding, intensity
         self.data_mode, self.arena_mode = data_mode, arena_mode
         self.telemetry = TelemetrySnapshot()
@@ -152,6 +157,74 @@ class Session:
             else:
                 self.zoomed = False
             self.fullscreen_panel = self._fullscreen_restore = None
+
+    @property
+    def arcade_game(self):
+        return self.arcade_games.get(self.arcade_game_id)
+
+    def arcade_select(self, identifier):
+        if identifier not in GAME_BY_ID:
+            raise ValueError("Unknown arcade game: " + str(identifier))
+        self.choose_screen("arcade")
+        if identifier not in self.arcade_games:
+            self.arcade_games[identifier] = create_game(identifier, 42 if self.seed is None else self.seed)
+        self.arcade_game_id = identifier
+        self.arcade_choice = next(index for index, spec in enumerate(GAME_SPECS) if spec.id == identifier)
+
+    def arcade_key(self, key):
+        """Arcade owns its letters before dashboard bindings can consume them."""
+        from .terminal import curses
+        if key in (ord("q"), ord("Q"), 3):
+            self.request_quit()
+            return
+        if key == ord("?"):
+            self.help_open = True
+            return
+        if key == ord("!"):
+            self.handle("mission-stop")
+            return
+        if key == ord("/"):
+            self.handle("palette")
+            return
+        if ord("1") <= key <= ord("8"):
+            self.choose_screen(SCREENS[key - ord("1")].id)
+            return
+        if key == 27:
+            if self.arcade_game is not None:
+                self.arcade_game_id = None
+            else:
+                self.choose_screen("cockpit")
+            return
+        directions = {ord("a"): "left", ord("A"): "left", ord("d"): "right", ord("D"): "right",
+                      ord("w"): "up", ord("W"): "up", ord("s"): "down", ord("S"): "down"}
+        if curses is not None:
+            directions.update({curses.KEY_LEFT: "left", curses.KEY_RIGHT: "right",
+                               curses.KEY_UP: "up", curses.KEY_DOWN: "down"})
+        enter = key in (10, 13) or curses is not None and key == curses.KEY_ENTER
+        if self.arcade_game is None:
+            direction = directions.get(key)
+            if key in (ord("p"), ord("P")):
+                self.handle("palette")
+            elif enter or key == ord(" "):
+                self.arcade_select(GAME_SPECS[self.arcade_choice].id)
+            elif direction in ("left", "up") or key in (ord("k"), ord("K")):
+                self.arcade_choice = (self.arcade_choice - 1) % len(GAME_SPECS)
+            elif direction in ("right", "down") or key in (9, ord("j"), ord("J")):
+                self.arcade_choice = (self.arcade_choice + 1) % len(GAME_SPECS)
+            return
+        if not self.arcade_viewport_ready:
+            return
+        action = directions.get(key)
+        if enter:
+            action = "start"
+        elif key in (ord("p"), ord("P")):
+            action = "pause"
+        elif key in (ord("r"), ord("R")):
+            action = "restart"
+        elif key == ord(" "):
+            action = {"snake": "pause", "blocks": "drop", "runner": "jump"}[self.arcade_game_id]
+        if action:
+            self.arcade_game.handle(action)
 
     def toggle_fullscreen(self, panel):
         if panel not in ("scope", "visual"):
@@ -403,6 +476,8 @@ class Session:
             self.choose_animation(value)
         elif kind == "scope-mode":
             self.choose_scope_mode(value)
+        elif kind == "game":
+            self.arcade_select(value)
         elif kind == "scene":
             self.activate(value)
         elif kind == "preset":
@@ -773,6 +848,9 @@ class Session:
             self.cycle_option("auto_cycle")
 
     def update(self, dt):
+        if (self.screen_id == "arcade" and self.arcade_game is not None and not self.menu_open
+                and self.fullscreen_panel is None and self.arcade_viewport_ready):
+            self.arcade_game.update(dt)
         if self.paused or self.menu_open:
             self.sim.update(0)
         if not self.paused and not self.menu_open:

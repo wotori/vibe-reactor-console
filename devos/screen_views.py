@@ -83,12 +83,17 @@ def header(renderer, session, rows, cols):
     badge = "INPUT: " + owner + " / " + mode_label(session)
     if cols >= 100:
         canvas.put(0, max(2, cols - len(badge) - 3), badge, "accent", True)
-    canvas.put(1, 2, "1 COCKPIT  2 LAB  3 ARENA  4 SITE  5 BODY  6 ATLAS  7 REPLAY", "muted", limit=cols - 4)
+    canvas.put(1, 2, "1 COCKPIT  2 LAB  3 ARENA  4 SITE  5 BODY  6 ATLAS  7 REPLAY  8 ARCADE", "muted", limit=cols - 4)
     status = "STREAM VIEW / PRIVATE CONTENT HIDDEN" if getattr(session, "stream_view", False) else getattr(session, "status_message", "")
     hint = status or "P commands / O focus / Z zoom / ? help"
     if cols < 100:
         hint = badge + " | " + hint
     canvas.put(2, 2, safe(hint), "accent" if status else "muted", limit=cols - 4)
+
+
+def arcade(renderer, session, rows, cols):
+    from .arcade_view import draw_arcade
+    draw_arcade(renderer, session, rows, cols)
 
 
 def panels(session, rows, cols):

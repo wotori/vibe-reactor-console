@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.13.0 — 2026-10-31
+
+- Added screen 8 / Arcade with three playable local games: Snake, Falling Blocks and the original side-scrolling Byte Runner.
+- Snake grows, accelerates and checks wall/self collisions; Blocks has seven-bag pieces, wall-kick rotation, ghost landing, next preview, line clearing and scoring.
+- Byte Runner adds an original scrolling level with platforms, pits, coins, enemies, stomps, springs, checkpoints, three lives and a finish flag.
+- Added explicit game selection, start/resume, pause, restart and safe return to the hub. Games freeze while hidden, behind modals/fullscreen or below the minimum terminal size; live services continue independently.
+- Games own their keys without changing dashboard options or terminal input. Q keeps exit confirmation, ! keeps managed mission stop; game progress remains in memory while switching views.
+- Split deterministic engines, immutable game frames, registry and pure responsive Arcade drawing; no runtime dependencies or external assets.
+- Validation: 499 passing tests, including a complete playable platformer route, game mechanics, modal/resize freezes and picker/terminal input ownership. A real PTY/tmux check preserved the child PID and kept game input out of its blocked read. The staged wheel was installed outside the repository and exercised all three engines; actual Renderer screenshots document the hub and games. No model calls or new dependencies.
+
 ## 0.12.1 — 2026-10-31
 
 - Added direct X/Y fullscreen for all eight Math Scope modes and all twelve main animations, using the complete viewport with a small controls bar.

@@ -38,6 +38,8 @@ SCREENS = (
                ("atlas-graph", "atlas-details", "atlas-events"), lazy_render("atlas")),
     ScreenSpec("replay", "REPLAY STUDIO", "Recorded events, a visible playhead and no live actions.",
                ("replay-stage", "replay-timeline", "replay-events"), lazy_render("replay")),
+    ScreenSpec("arcade", "ARCADE", "Snake, falling blocks and an original ASCII platformer.",
+               ("arcade",), lazy_render("arcade")),
 )
 SCREEN_BY_ID = {screen.id: screen for screen in SCREENS}
 
@@ -57,6 +59,8 @@ def screen_layout(screen_id, rows, cols, focused_panel=None, zoomed=False, scope
     focused_panel = focused_panel if focused_panel in spec.panels else None
     if zoomed:
         return ((focused_panel or spec.panels[0], full),)
+    if screen_id == "arcade":
+        return (("arcade", full),)
     if screen_id == "cockpit":
         from .layout import arrange
         layout = arrange(rows, cols, geometry_focus=True, scope=scope)

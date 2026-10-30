@@ -65,7 +65,8 @@ class Renderer:
             self.fullscreen(session, rows, cols)
         else:
             render_screen(self, session, rows, cols)
-            self.footer(session, rows, cols)
+            if session.screen_id != "arcade":
+                self.footer(session, rows, cols)
         if session.quit_confirm:
             self.quit_confirmation(session, rows, cols)
         elif session.project_editor:
@@ -238,10 +239,11 @@ class Renderer:
         self.canvas.fill(rect)
         p = self.canvas.panel(rect, "DEV/OS / CONTROLS", "ANY KEY closes")
         lines = (
-            "1 Cockpit / 2 Visual Lab / 3 Arena / 4 Site / 5 Body / 6 Atlas / 7 Replay",
+            "1 Cockpit / 2 Lab / 3 Arena / 4 Site / 5 Body / 6 Atlas / 7 Replay / 8 Arcade",
             "P searchable commands / TAB scenes + options / G visual picker",
             "O next panel / Z zoom / V signal binding / I intensity / D Atlas view",
             "X math fullscreen / Y visual fullscreen / same key or ESC returns",
+            "Arcade: arrows/WASD, ENTER start, SPACE action, P pause, R restart, ESC lobby",
             "L binding settings: source/ranges/linear/log/EMA/missing; S saves",
             "U choose SOURCE project folder / N random file / R reread source",
             "F2 or Ctrl+] terminal input / F4 other terminal / F3 source",
@@ -528,9 +530,9 @@ class Renderer:
         elif session.screen_id == "replay":
             text = " {} | SPACE play [ ] seek , . speed M bookmark }} next | P commands ? help Q quit".format(state)
         elif cols < 90:
-            text = " {} | 1-7 screens P commands ? help F2 input G visuals Q quit".format(state)
+            text = " {} | 1-8 screens P commands ? help F2 input G visuals Q quit".format(state)
         else:
-            text = " {} | 1-7 screens P commands ? help O panel Z zoom F2 input F4 other | TAB scenes G visuals W scope F math A auto T color B bg Q quit | {:.2g}x | {} lines".format(
+            text = " {} | 1-8 screens P commands ? help O panel Z zoom F2 input F4 other | TAB scenes G visuals W scope F math A auto T color B bg Q quit | {:.2g}x | {} lines".format(
                 state, session.speed, session.sim.total_lines)
         if session.status_message and not session.stream_view and not session.terminal_focused:
             text = " " + session.status_message + " | P commands / ? help"

@@ -136,6 +136,9 @@ def dispatch_key(session, runtime, key):
         data = terminal_key(key)
         if data:
             runtime.terminals.send(data, session.terminal_slot)
+    elif (session.screen_id == "arcade" and session.fullscreen_panel is None
+          and session.menu_kind is None):
+        session.arcade_key(key)
     elif key == 3:
         session.handle("quit")
     elif action:
@@ -186,6 +189,8 @@ def run(screen, args):
                 with_services.terminals.set_visible(tuple(slot for slot, rect in rectangles) if not session.stream_view else ())
                 for slot, rect in rectangles:
                     with_services.terminals.resize(max(2, rect.width - 4), max(1, rect.height - 4), slot)
+                rows, cols = screen.getmaxyx()
+                session.arcade_viewport_ready = rows >= 16 and cols >= 48
                 session.update(dt)
                 with_services.update(dt)
                 render_started = time.perf_counter()

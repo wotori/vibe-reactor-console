@@ -19,11 +19,14 @@ def catalog():
     from .visuals import ANIMATIONS
     from .bindings import BINDING_BY_ID
     from .math_scope import SCOPES
+    from .games import GAME_SPECS
     commands = [Command("screen:" + item.id, "Screen / " + item.title, item.description, "screen", item.id) for item in SCREENS]
     commands += [Command("visual:" + item.id, "Visual / " + item.title, item.description, "visual", item.id) for item in ANIMATIONS]
     commands += [Command("scene:" + item.id, "Code scene / " + item.title, item.description, "scene", item.id) for item in MODES]
     commands += [Command("scope:" + item.id, "Math scope / " + item.title, item.description,
                          "scope-mode", item.id) for item in SCOPES]
+    commands += [Command("game:" + item.id, "Arcade / " + item.title, item.description,
+                         "game", item.id) for item in GAME_SPECS]
     commands += [Command("preset:" + key, "Preset / " + key, "Apply preferences; no commands are launched.", "preset", key) for key in PRESETS]
     for kind, values in (("binding", tuple(BINDING_BY_ID)),
                          ("intensity", ("calm", "cinematic", "showcase")),

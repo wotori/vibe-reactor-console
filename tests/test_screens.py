@@ -69,10 +69,10 @@ def fixture_session():
 
 
 class ScreenLayoutTests(unittest.TestCase):
-    def test_seven_screens_are_registered_with_lazy_renderers(self):
+    def test_eight_screens_are_registered_with_lazy_renderers(self):
         self.assertEqual(tuple(item.id for item in SCREENS),
-                         ("cockpit", "visual-lab", "arena", "site", "body", "atlas", "replay"))
-        self.assertEqual(len(SCREEN_BY_ID), 7)
+                         ("cockpit", "visual-lab", "arena", "site", "body", "atlas", "replay", "arcade"))
+        self.assertEqual(len(SCREEN_BY_ID), 8)
         self.assertTrue(all(callable(item.render) and item.panels for item in SCREENS))
 
     def test_layouts_fit_and_never_overlap_through_focus_zoom_and_resize(self):
@@ -186,7 +186,7 @@ class ConsoleScreenTests(unittest.TestCase):
         for spec in SCREENS[1:]:
             session.screen_id = spec.id
             text, _ = self.draw(session)
-            self.assertIn("NO SOURCE", text)
+            self.assertIn("LOCAL GAMES" if spec.id == "arcade" else "NO SOURCE", text)
             self.assertNotIn("LIVE / OK", text)
 
     def test_no_measurements_does_not_make_live_provider_demo(self):
