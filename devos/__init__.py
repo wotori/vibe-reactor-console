@@ -1,3 +1,3 @@
-"""DEV/OS: a coding simulator with an optional real embedded terminal."""
+"""DEV/OS: an ASCII development workstation with optional terminals and signals."""
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"

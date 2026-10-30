@@ -262,7 +262,7 @@ class Replay:
         self.path = Path(path).expanduser()
         self.manifest, self.events, self._offsets, self._checkpoints = {}, [], [], []
         self.playhead, self.speed, self.playing, self._cursor = 0.0, 1.0, False, 0
-        total, seen, pending_path = 0, set(), self.path
+        total, seen, pending_path, event_offsets = 0, set(), self.path, {}
         while pending_path is not None:
             resolved = pending_path.resolve()
             if resolved in seen or len(seen) >= 32:
@@ -296,12 +296,30 @@ class Replay:
                         checkpoint_events = document.get("events", [])
                         if not isinstance(checkpoint_events, list) or len(checkpoint_events) > 1024:
                             raise ValueError("Invalid replay checkpoint")
-                        state = tuple(self._replay_event(DataEvent.from_dict(item)) for item in checkpoint_events)
+                        checkpoint_offset = document.get("offset_ms")
+                        self._offset(checkpoint_offset)
+                        state = []
+                        for item in checkpoint_events:
+                            checkpoint_event = self._replay_event(DataEvent.from_dict(item))
+                            if checkpoint_event.recorded_offset_ms is None:
+                                identity = (checkpoint_event.source_id, checkpoint_event.source_session_id, checkpoint_event.id)
+                                inferred = event_offsets.get(identity)
+                                if inferred is None:
+                                    raise ValueError("Checkpoint event needs its original recording offset")
+                                checkpoint_event = replace(checkpoint_event, recorded_offset_ms=inferred)
+                            state.append(checkpoint_event)
+                        state = tuple(state)
                         self._checkpoints.append((self._offset(document.get("offset_ms")), len(self.events), state))
                     elif kind == "event" or kind is None and "topic" in document:
                         event_doc = document.get("event") if kind == "event" else document
                         event = self._replay_event(DataEvent.from_dict(event_doc))
-                        offset = self._offset(document.get("offset_ms", event.recorded_offset_ms))
+                        offset_ms = document.get("offset_ms", event.recorded_offset_ms)
+                        offset = self._offset(offset_ms)
+                        # Some normalized envelopes carry their offset only in
+                        # the recording wrapper. Every downstream cue must use
+                        # the same timeline for seek and age reconstruction.
+                        event = replace(event, recorded_offset_ms=offset_ms)
+                        event_offsets[(event.source_id, event.source_session_id, event.id)] = offset_ms
                         if self._offsets and offset < self._offsets[-1]:
                             raise ValueError("Recording offsets must be monotonic")
                         self.events.append(event)

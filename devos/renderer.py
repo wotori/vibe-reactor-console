@@ -11,6 +11,7 @@ from .simulation import clamp
 from .syntax import spans
 from .terminal import Rect
 from .visuals import ANIMATION_BY_ID, render_animation, scope_pixels
+from .screen_registry import render_screen, screen_layout, SCREEN_BY_ID
 
 
 SPINNER = "|/-\\"
@@ -60,26 +61,144 @@ class Renderer:
             canvas.put(4, 1, "Ctrl+] dashboard / Q goes to child" if session.terminal_focused
                        else "F2 terminal | TAB options | Q quit", "muted")
         else:
-            layout = arrange(rows, cols, sim.mode.hardware, geometry_focus=True, scope=session.options.scope)
-            self.header(session, layout.header, cols)
-            if session.terminal_visible:
-                self.shell(session, layout.editor)
-            else:
-                self.editor(sim, layout.editor)
-            if layout.geometry:
-                self.geometry(session, layout.geometry, layout.diagnostics is not None)
-            if layout.diagnostics:
-                self.diagnostics(session, layout.diagnostics)
-            self.logs(sim, layout.logs)
-            if layout.memory:
-                self.memory(sim, layout.memory)
-            if layout.scope:
-                self.scope(session, layout.scope)
+            render_screen(self, session, rows, cols)
             self.footer(session, rows, cols)
-        if session.menu_open:
+        if session.inspector_kind:
+            self.inspector(session, rows, cols)
+        elif session.composer_open:
+            self.handoff_composer(session, rows, cols)
+        elif session.palette_open:
+            self.command_palette(session, rows, cols)
+        elif session.help_open:
+            self.help(session, rows, cols)
+        elif session.menu_kind:
             self.picker(session, rows, cols)
         canvas.cursor(self.cursor_position if not session.menu_open else None)
         screen.refresh()
+
+    def cockpit(self, session, rows, cols):
+        sim = session.sim
+        layout = arrange(rows, cols, sim.mode.hardware, geometry_focus=True, scope=session.options.scope)
+        if session.stream_view:
+            self.canvas.put(0, 2, "DEV/OS // STREAM VIEW / personal panels hidden", "main", True)
+        else:
+            self.header(session, layout.header, cols)
+        panels = screen_layout("cockpit", rows, cols, session.focused_panel, True,
+                               session.options.scope) if session.zoomed else tuple(
+            (name, rect) for name, rect in (("source", layout.editor), ("visual", layout.geometry),
+                ("diagnostics", layout.diagnostics), ("events", layout.logs),
+                ("memory", layout.memory), ("scope", layout.scope)) if rect is not None)
+        for name, rect in panels:
+            if name == "source":
+                if session.terminal_visible:
+                    self.shell(session, rect)
+                elif session.stream_view:
+                    self.canvas.panel(rect, "SOURCE / HIDDEN", "STREAM VIEW")
+                else:
+                    self.editor(sim, rect)
+            elif name == "visual":
+                self.geometry(session, rect, layout.diagnostics is not None or session.zoomed)
+            elif name == "diagnostics":
+                self.diagnostics(session, rect)
+            elif name == "events":
+                if not session.stream_view:
+                    self.logs(sim, rect)
+                else:
+                    self.canvas.panel(rect, "EVENTS / HIDDEN", "STREAM VIEW")
+            elif name == "scope":
+                self.scope(session, rect)
+            elif name == "memory":
+                self.memory(sim, rect)
+
+    def command_palette(self, session, rows, cols):
+        rect = Rect(max(0, (rows - min(rows - 2, 25)) // 2), 2, min(rows - 2, 25), max(5, cols - 5))
+        self.canvas.fill(rect)
+        p = self.canvas.panel(rect, "COMMANDS / P", "ESC closes")
+        p.put(0, 0, "> " + session.palette_query + "_", "main", True)
+        commands = session.palette_commands
+        count = max(1, p.height - 4)
+        index = session.palette_index % max(1, len(commands))
+        start = max(0, index - count + 1)
+        for row, item in enumerate(commands[start:start + count]):
+            selected = start + row == index
+            p.put(row + 2, 0, ("> " if selected else "  ") + item.title,
+                  "main" if selected else "text", selected, selected)
+        if not commands:
+            p.put(2, 0, "No matching commands", "muted")
+        p.put(p.height - 1, 0, "Type to filter / arrows select / ENTER run / no shell execution", "muted")
+
+    def handoff_composer(self, session, rows, cols):
+        rect = Rect(1, 1, max(3, rows - 3), max(5, cols - 3))
+        self.canvas.fill(rect)
+        p = self.canvas.panel(rect, "HANDOFF / EDIT PUBLIC REPLY", "ENTER sends / ESC cancels")
+        actor = "CODEX -> CLAUDE" if session.terminal_slot == "left" else "CLAUDE -> CODEX"
+        p.put(0, 0, actor + " / Ctrl+U clear / Backspace edit", "main", True)
+        if not session.stream_view:
+            lines = textwrap.wrap(session.composer_text + "_", max(1, p.width))
+            for row, line in enumerate(lines[-max(0, p.height - 3):]):
+                p.put(row + 2, 0, line, "text")
+        else:
+            p.put(2, 0, "STREAM VIEW / public reply hidden", "muted")
+        p.put(p.height - 1, 0, "Finite managed delivery / public text only / no commands are inferred", "accent")
+
+    def help(self, session, rows, cols):
+        rect = Rect(1, 1, max(3, rows - 3), max(5, cols - 3))
+        self.canvas.fill(rect)
+        p = self.canvas.panel(rect, "DEV/OS / CONTROLS", "ANY KEY closes")
+        lines = (
+            "1 Cockpit / 2 Visual Lab / 3 Arena / 4 Site / 5 Body / 6 Atlas / 7 Replay",
+            "P searchable commands / TAB scenes + options / G visual picker",
+            "O next panel / Z zoom / V signal binding / I intensity / D Atlas view",
+            "F2 or Ctrl+] terminal input / F4 other terminal / F3 source",
+            "While INPUT: all text goes to child. Ctrl+] returns to dashboard.",
+            "B native/black background / T palette / W scope / A auto visuals",
+            "E demo event / H handoff / S save safe preferences / SPACE pause",
+            "Replay: SPACE play, [ ] seek, P > Replay / next failure",
+            "Tasks: supply --task, then P > Task / run configured check",
+            "Arena Demo is simulated. Watch terminals are human-owned.",
+            "Managed: explicit --mission + separate workspaces, finite exchanges.",
+            "LIVE unavailable stays unavailable; the UI never invents a reading.",
+            "Stream View hides personal panels. Recordings exclude pulse by default.",
+            "Q quit / ? help",
+        )
+        for row, line in enumerate(lines[:p.height]):
+            p.put(row, 0, line, "main" if row < 2 else "text")
+
+    def inspector(self, session, rows, cols):
+        rect = Rect(1, 1, max(3, rows - 3), max(5, cols - 3))
+        self.canvas.fill(rect)
+        p = self.canvas.panel(rect, "INSPECT / " + session.inspector_kind.upper(), "arrows scroll / ESC closes")
+        if session.stream_view:
+            p.put(0, 0, "STREAM VIEW / result content hidden", "muted")
+            return
+        lines = []
+        if session.inspector_kind == "task":
+            task = session.task_snapshot
+            if task:
+                lines = ["REAL TASK / " + task.state.upper(), "RUN " + task.run_id,
+                         "ARGV " + repr(task.argv), "CWD " + task.cwd,
+                         "REVISION " + task.revision, "EXIT " + str(task.exit_code),
+                         "ERROR " + task.error, "OUTPUT" + (" / TRUNCATED" if task.truncated else ""), task.output]
+        elif session.arena:
+            arena = session.arena
+            lines = [arena.mode.upper() + " / " + arena.status,
+                     "PHASE " + getattr(arena, "phase", "idle") + " / FIX {}/2".format(getattr(arena, "fix_cycles", 0)),
+                     "CHECKS " + ("VERIFIED" if arena.verified else "NOT VERIFIED"), arena.reason]
+            for report in getattr(arena, "validation_reports", ()):
+                lines += ["INDEPENDENT CHECK / " + repr(report.argv), "CWD " + report.cwd,
+                          "ARTIFACT HASH " + report.artifact_hash, "EXIT " + str(report.exit_code),
+                          "STATE " + report.status, "STDOUT", report.stdout, "STDERR", report.stderr]
+            for artifact in arena.artifacts:
+                lines += [artifact.kind.upper() + " / " + artifact.id + " / " + artifact.producer,
+                          "SHA256 " + artifact.sha256, artifact.text]
+        wrapped = [line for item in lines for raw in str(item).splitlines() for line in (
+            textwrap.wrap(raw, max(1, p.width), replace_whitespace=False) or [""])]
+        if not wrapped:
+            wrapped = ["No completed result yet. Configure --task or start an explicit mission."]
+        start = min(session.report_scroll, max(0, len(wrapped) - max(1, p.height - 1)))
+        for row, line in enumerate(wrapped[start:start + max(0, p.height - 1)]):
+            p.put(row, 0, line, "text")
+        p.put(p.height - 1, 0, "LINE {}/{} / output is bounded / claims are separate from check evidence".format(start + 1, len(wrapped)), "muted")
 
     def header(self, session, height, cols):
         c, sim = self.canvas, session.sim
@@ -128,9 +247,15 @@ class Renderer:
             SPINNER[int(sim.elapsed * 8) % 4], sim.source.first_line + min(sim.line_index, len(sim.lines) - 1),
             sim.char_index + 1, status), "accent")
 
-    def shell(self, session, rect):
-        focused, frame = session.terminal_focused, session.terminal_frame
-        p = self.canvas.panel(rect, "01 / TERMINAL", "INPUT" if focused else "VIEW")
+    def shell(self, session, rect, slot=None):
+        focused = session.terminal_focused and (slot is None or slot == session.terminal_slot)
+        frame = session.terminal_frame
+        if slot:
+            frame = next((item.frame for item in session.terminal_slots if item.id == slot), None)
+        p = self.canvas.panel(rect, "01 / TERMINAL" + (" / " + slot.upper() if slot else ""), "INPUT" if focused else "VIEW")
+        if session.stream_view:
+            p.put(0, 0, "STREAM VIEW / terminal text hidden", "muted")
+            return
         p.put(0, 0, "REAL SHELL / F2 or Ctrl+] dashboard" if focused else "REAL SHELL / F2 type / F3 source",
               "main" if focused else "muted", focused)
         height = max(0, p.height - 2)
@@ -159,7 +284,8 @@ class Renderer:
         p.put(0, 0, caption, "muted")
         reserved = (3 if hyper else 2) if expanded else 4
         height = max(0, p.height - reserved)
-        for (x, y), pixel in render_animation(animation, elapsed, p.width, height, session.protocol).items():
+        for (x, y), pixel in render_animation(animation, elapsed, p.width, height, session.protocol,
+                                              session.visual_parameters()).items():
             p.put(y + 1, x, pixel.char, pixel.tone, pixel.bold)
         if not expanded and p.height >= 7:
             if sim.mode.hardware:
@@ -265,14 +391,24 @@ class Renderer:
             p.put(row, 16, entry.message, "warn" if entry.kind == "NOTE" else "text")
 
     def footer(self, session, rows, cols):
-        state = "PAUSED" if session.paused else "LIVE"
+        if session.screen_id == "replay" and session.replay_status:
+            provenance = "REPLAY / " + ("PLAYING" if session.replay_status.playing else "PAUSED")
+        elif session.screen_id == "arena" and session.arena:
+            provenance = session.arena.mode.upper()
+        elif session.screen_id == "cockpit":
+            provenance = "SIM BUILD"
+        else:
+            provenance = session.telemetry.mode.upper()
+        state = "VISUAL PAUSED / " + provenance if session.paused and session.screen_id != "replay" else provenance
         if session.terminal_focused:
             text = " TERMINAL INPUT | F2 / Ctrl+] dashboard | F3 source | Ctrl+C interrupts child | Tab/arrows go to shell"
         elif cols < 90:
-            text = " {} | F2 terminal | TAB options G visuals W sine A auto Q quit".format(state)
+            text = " {} | 1-7 screens P commands ? help F2 input G visuals Q quit".format(state)
         else:
-            text = " {} | F2 terminal F3 source | TAB scenes G visuals W sine A auto C consumer SPACE pause T color B bg N next R reload Q quit | {:.2g}x | {} lines".format(
+            text = " {} | 1-7 screens P commands ? help O panel Z zoom F2 input F4 other | TAB scenes G visuals W sine A auto T color B bg Q quit | {:.2g}x | {} lines".format(
                 state, session.speed, session.sim.total_lines)
+        if session.status_message and not session.stream_view and not session.terminal_focused:
+            text = " " + session.status_message + " | P commands / ? help"
         self.canvas.put(rows - 1, 0, text, "warn" if session.paused else "main", limit=cols - 1)
 
     def picker(self, session, rows, cols):

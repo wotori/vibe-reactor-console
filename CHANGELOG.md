@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.0 — 2026-10-31
+
+- Connected seven responsive screens: Cockpit, Visual Lab, Arena, Site, Body, Atlas and Replay.
+- Added searchable commands, help, panel focus/zoom, six safe presets and atomic preference saving.
+- Integrated LIVE/DEMO bindings, actual Git/task results, event recording/replay and private Stream View.
+- Connected two terminal slots and edited public handoffs; added artifact/check inspectors and global managed Stop.
+- Builder/Challenger now reviews exact immutable source snapshots with at most two fix/review cycles.
+- Added explicit three-way source candidate creation with retained conflict artifacts; original workspaces are preserved.
+- Fixed replay timing/freshness, sticky live pulse selection, expired audience visuals, test-result replacement and modal keyboard ownership.
+- Added runnable data examples, actual UI screenshots and implementation/connection documentation.
+- Validation: 250 passing tests, including real PTY/local-source and fake-agent integration checks; wheel packaging and renderer visual QA. No model calls.
+- External website/account mapping and hardware-specific BLE remain separate integrations; generic JSON/HTTP/BPM/RR inputs work.
+
 ## 0.7.0 — 2026-10-31
 
 - Added two persistent, independently focused tmux terminal slots and bounded input queues.

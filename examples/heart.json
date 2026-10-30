@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "source": "example-heart-bridge",
+  "observed_at": null,
+  "measurement_id": "example-heart-notification-1",
+  "heart_rate_bpm": 72,
+  "rr_intervals_ms": [830, 836],
+  "sensor_contact": "good",
+  "timing_basis": "notification_received"
+}

@@ -101,6 +101,26 @@ class TelemetryTests(unittest.TestCase):
         hub.submit(metric_event(5, 55, session="run-1"))
         self.assertEqual(hub.update().metric("site.active_sessions_60s").value, 50)
 
+    def test_same_batch_session_restart_preserves_arrival_not_lexical_session_order(self):
+        hub, _ = self.hub()
+        hub.submit(metric_event(50, 10, session="old-z"))
+        hub.submit(metric_event(1, 20, session="new-a"))
+        self.assertEqual(hub.update().metric("site.active_sessions_60s").value, 20)
+        hub.submit(metric_event(2, 30, session="new-a"))
+        self.assertEqual(hub.update().metric("site.active_sessions_60s").value, 30)
+
+    def test_coalesced_old_session_gauge_and_critical_event_cannot_retire_new_session(self):
+        hub, _ = self.hub()
+        hub.submit(metric_event(1, 10, session="old-z"))
+        handoff = DataEvent("handoff", "agent.handoff.ready", "test", "old-z", 2,
+                            "live", None, "2026-10-31T12:00:00Z", {"summary": "ready"})
+        hub.submit(handoff)
+        hub.submit(metric_event(1, 20, session="new-a"))
+        hub.submit(metric_event(3, 11, session="old-z"))
+        snapshot = hub.update()
+        self.assertEqual(snapshot.metric("site.active_sessions_60s").value, 20)
+        self.assertIn("handoff", [item.id for item in snapshot.events])
+
     def test_explicit_live_selection_never_uses_demo_fallback(self):
         with tempfile.TemporaryDirectory() as folder:
             hub = TelemetryHub(source_file=Path(folder) / "missing.json", start_workers=False)
@@ -163,6 +183,22 @@ class TelemetryTests(unittest.TestCase):
             body = next(event for event in events if event.topic == "body.signal")
             self.assertEqual(body.payload["rr_intervals_ms"], ())
             self.assertEqual(body.payload["timing_basis"], "notification_received")
+
+    def test_generic_live_file_metric_stays_selected_instead_of_competing_with_demo(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "signals.json"
+            path.write_text(json.dumps({"metrics": {"body.heart_rate": {"value": 90, "unit": "bpm"}}}))
+            hub = TelemetryHub(source_file=path, start_workers=False)
+            self.addCleanup(hub.close)
+            for event in hub._providers[0].poll():
+                hub.submit(event)
+            sample = hub.update(0).metric("body.heart_rate")
+            self.assertEqual((sample.mode, sample.value), ("live", 90))
+            for _ in range(5):
+                sample = hub.update(1).metric("body.heart_rate")
+                self.assertEqual((sample.mode, sample.value), ("live", 90))
+            self.assertEqual(hub.snapshot().metric("body.rr_interval").value, None)
+            self.assertEqual(hub.snapshot().rr_intervals, ())
 
     def test_rr_batches_are_deduplicated_and_pulse_has_short_ttl(self):
         hub, clock = self.hub(source_selection={"body.heart_rate": "heart"})

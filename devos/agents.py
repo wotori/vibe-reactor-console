@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import signal
 import shutil
+import stat
 import subprocess
 import threading
 import time
@@ -103,6 +104,8 @@ class ArenaSnapshot:
     reason: str = ""
     verified: bool = False
     validation_reports: tuple = ()
+    phase: str = "idle"
+    fix_cycles: int = 0
 
 
 @dataclass(frozen=True)
@@ -429,23 +432,50 @@ def validate_workspaces(workspaces):
     return {name: str(path) for name, path in paths.items()}
 
 
+def _workspace_bytes(root, relative):
+    """Read one bounded regular file without following a final symlink."""
+    root, relative = Path(root).resolve(strict=True), Path(relative)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("Artifact path escapes its workspace")
+    path = root / relative
+    if root not in path.resolve(strict=True).parents or path.is_symlink():
+        raise ValueError("Artifact symlink escapes are unsupported")
+    fd = os.open(str(path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 1024 * 1024:
+            raise ValueError("Artifact must be a regular file of at most 1 MiB")
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            result = stream.read(1024 * 1024 + 1)
+        if len(result) > 1024 * 1024:
+            raise ValueError("Artifact grew beyond the 1 MiB limit")
+        return result
+    finally:
+        os.close(fd)
+
+
 def snapshot_manifest(root, max_files=2000, max_bytes=32 * 1024 * 1024):
     """Hash only bounded regular files; no secrets, links or external file URLs."""
     root = Path(root).resolve(strict=True)
     entries, total = [], 0
-    excluded = {".git", ".env", ".codex", ".claude", "node_modules", ".venv", "__pycache__", ".devos"}
+    excluded = {".git", ".env", ".codex", ".claude", "node_modules", ".venv", "__pycache__", ".devos",
+                ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".nox", "build", "dist", "target",
+                ".npmrc", ".pypirc", "credentials", "credentials.json", "secrets", "secrets.json", "id_rsa", "id_ed25519"}
     for directory, dirs, files in os.walk(str(root), followlinks=False):
-        dirs[:] = sorted(name for name in dirs if name not in excluded and not (Path(directory) / name).is_symlink())
+        dirs[:] = sorted(name for name in dirs if name.casefold() not in excluded and not name.endswith(".egg-info")
+                         and not (Path(directory) / name).is_symlink())
         for name in sorted(files):
             path = Path(directory) / name
-            if name.startswith(".env") or name in excluded or path.is_symlink() or path.suffix in (".pem", ".key"):
+            if (name.casefold().startswith(".env") or name.casefold() in excluded or path.is_symlink() or
+                    path.suffix.casefold() in (".pem", ".key", ".p12", ".pfx", ".keystore")):
                 continue
-            size = path.stat().st_size
-            if size > 1024 * 1024:
+            info = path.stat()
+            size = info.st_size
+            if not stat.S_ISREG(info.st_mode) or size > 1024 * 1024:
                 continue
             if len(entries) >= max_files or total + size > max_bytes:
                 raise ValueError("Workspace snapshot exceeds file/byte limits; select a smaller project")
-            data = path.read_bytes()
+            data = _workspace_bytes(root, path.relative_to(root))
             total += len(data)
             entries.append((str(path.relative_to(root)), hashlib.sha256(data).hexdigest()))
     encoded = json.dumps(entries, separators=(",", ":"), ensure_ascii=True).encode()
@@ -455,38 +485,59 @@ def snapshot_manifest(root, max_files=2000, max_bytes=32 * 1024 * 1024):
 def prepare_workspaces(source, destination, mode="snapshot"):
     """Explicit setup helper; retains all outputs and never resets/cleans a repo."""
     source, destination = Path(source).resolve(strict=True), Path(destination).resolve()
+    if not source.is_dir():
+        raise ValueError("Mission source must be a directory")
     if destination == source or source in destination.parents:
         raise ValueError("Mission destination must be outside the source project")
     if destination.exists():
         raise ValueError("Mission destination must not already exist")
-    base = subprocess.run(["git", "-C", str(source), "rev-parse", "--verify", "HEAD"],
-                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
-    revision = base.stdout.decode().strip() if base.returncode == 0 else None
+    try:
+        base = subprocess.run(["git", "-C", str(source), "rev-parse", "--verify", "HEAD"],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=5)
+        revision = base.stdout.decode().strip() if base.returncode == 0 else None
+    except OSError:
+        revision = None
     if mode == "worktree" and revision is None:
         raise ValueError("Worktree mode needs an existing commit; use snapshot mode or Watch")
     if mode not in ("snapshot", "worktree"):
         raise ValueError("Unknown workspace mode")
-    entries, digest = snapshot_manifest(source)
+    # Snapshot mode deliberately includes selected uncommitted source bytes.
+    # Worktrees instead use one explicit HEAD commit, never the dirty source.
+    entries, digest = snapshot_manifest(source) if mode == "snapshot" else (None, None)
     destination.mkdir(parents=True)
     result = {}
+
+    def copy_manifest(origin, target):
+        target.mkdir()
+        for relative, expected in entries:
+            data = _workspace_bytes(origin, relative)
+            if hashlib.sha256(data).hexdigest() != expected:
+                raise ValueError("Source changed during snapshot; no mission was started")
+            copied = target / relative
+            copied.parent.mkdir(parents=True, exist_ok=True)
+            copied.write_bytes(data)
+            copied.chmod((Path(origin) / relative).stat().st_mode & 0o777)
+        if snapshot_manifest(target)[1] != digest:
+            raise ValueError("Copied snapshot does not match the attested base manifest")
+
     for provider in PROVIDERS:
         target = destination / provider
         if mode == "worktree":
-            subprocess.run(["git", "-C", str(source), "worktree", "add", "--detach", str(target), revision],
+            subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-C", str(source),
+                            "worktree", "add", "--detach", str(target), revision],
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            if entries is None:
+                entries, digest = snapshot_manifest(target)
+            elif snapshot_manifest(target)[1] != digest:
+                raise ValueError("Detached worktrees do not match the selected base commit")
         else:
-            target.mkdir()
-            for relative, expected in entries:
-                original = source / relative
-                data = original.read_bytes()
-                if original.is_symlink() or hashlib.sha256(data).hexdigest() != expected:
-                    raise ValueError("Source changed during snapshot; no mission was started")
-                copied = target / relative
-                copied.parent.mkdir(parents=True, exist_ok=True)
-                copied.write_bytes(data)
+            copy_manifest(source, target)
         result[provider] = str(target)
-    (destination / "manifest.json").write_text(json.dumps({"base": revision, "sha256": digest,
-                                                         "mode": mode, "files": entries}, indent=2) + "\n")
+    base_path = destination / "base"
+    copy_manifest(Path(result["codex"]) if mode == "worktree" else source, base_path)
+    (destination / "manifest.json").write_text(json.dumps({"schema_version": 1, "base": revision, "sha256": digest,
+                                                         "base_path": str(base_path), "mode": mode,
+                                                         "files": entries}, indent=2) + "\n")
     return validate_workspaces(result)
 
 
@@ -514,6 +565,11 @@ class AgentCoordinator:
         self.events, self.handoffs, self.artifacts = deque(maxlen=256), deque(maxlen=64), deque(maxlen=64)
         self.workspaces, self.profiles, self.workers = {}, {}, {}
         self._baselines = {}
+        self._completed_results = {}
+        self.phase, self.fix_cycles = "idle", 0
+        self._review_snapshot = None
+        self._acceptance_cases = ""
+        self._review_pairs = set()
         self.sessions = {}
         self._sequence = self._demo_index = self._round = 0
         self._seen_messages, self._fingerprints = set(), set()
@@ -540,7 +596,7 @@ class AgentCoordinator:
         return ArenaSnapshot(self.mode, self.status, tuple(self.cards.values()), tuple(self.events),
                              tuple(self.handoffs), tuple(self.artifacts), self.elapsed,
                              self.max_handoffs, self.deadline, self.reason, self.verified,
-                             tuple(self.validation_reports))
+                             tuple(self.validation_reports), self.phase, self.fix_cycles)
 
     def step_demo(self):
         if self.mode != "demo" or self._demo_index >= len(self.DEMO_STORY):
@@ -591,6 +647,7 @@ class AgentCoordinator:
             self._card(actor, result.status, result.text or result.error, result)
             self._event("turn", actor, result.status + ": " + (result.text or result.error))
             if result.status == "SUCCEEDED":
+                self._completed_results[actor] = bounded_text(result.text)
                 self._artifact(actor, result.text)
                 self._capture_patch(actor)
                 for index, message in enumerate(self.handoffs):
@@ -609,6 +666,11 @@ class AgentCoordinator:
         if self.status == "RUNNING" and not self.workers:
             if self.mode == "relay":
                 self.status = "READY"
+            elif self.scenario == "builder-challenger":
+                try:
+                    self._advance_builder()
+                except (OSError, ValueError, RuntimeError) as exc:
+                    self.status, self.reason = "NEEDS_USER", "Builder/Challenger stopped: " + str(exc)
             elif self._round == 0 and all(card.status == "SUCCEEDED" for card in self.cards.values()):
                 # Independent first tasks have both completed. Exchange immutable
                 # public summaries, never token deltas or peer-provided commands.
@@ -643,6 +705,8 @@ class AgentCoordinator:
                                      "claude": "workspace-write" if scenario == "split" else "read-only"}
         if set(self.profiles) != set(PROVIDERS):
             raise ValueError("A tool profile is required for each agent")
+        if scenario == "builder-challenger" and self.profiles != {"codex": "workspace-write", "claude": "read-only"}:
+            raise ValueError("Builder/Challenger requires an editable builder and enforced read-only reviewer")
         for actor in PROVIDERS:
             caps = self.adapters[actor].detect()
             if not caps.available:
@@ -654,7 +718,7 @@ class AgentCoordinator:
             contents, used = {}, 0
             for relative, fingerprint in entries:
                 path = Path(workspace) / relative
-                data = path.read_bytes()
+                data = _workspace_bytes(workspace, relative)
                 if len(data) <= 65536 and used + len(data) <= 4 * 1024 * 1024:
                     try:
                         contents[relative] = data.decode("utf-8")
@@ -666,6 +730,10 @@ class AgentCoordinator:
         self.started, self.elapsed = self.clock(), 0.0
         self.max_handoffs, self.deadline = max_handoffs, timeout
         self._round, self.reason, self.verified = 0, "", False
+        self.phase, self.fix_cycles = "initial", 0
+        self._completed_results.clear()
+        self._review_snapshot, self._acceptance_cases = None, ""
+        self._review_pairs.clear()
         self.handoffs.clear()
         self.artifacts.clear()
         self._seen_messages.clear()
@@ -750,11 +818,12 @@ class AgentCoordinator:
             for relative in paths:
                 path = root / relative
                 after = ""
-                if path.exists():
-                    if path.is_symlink() or root not in path.resolve().parents or path.stat().st_size > 65536:
+                if relative in current:
+                    data = _workspace_bytes(root, relative)
+                    if len(data) > 65536:
                         continue
                     try:
-                        after = path.read_text(encoding="utf-8")
+                        after = data.decode("utf-8")
                     except UnicodeDecodeError:
                         continue
                 before = contents.get(relative, "")
@@ -764,16 +833,151 @@ class AgentCoordinator:
                 used += len(chunks[-1])
                 if used >= 6000:
                     break
-            self.artifacts.append(Artifact(uuid.uuid4().hex, "patch", digest, actor, base, paths,
-                                           "".join(chunks) or "Binary/large changes: inspect artifact manifest."))
+            patch_text = bounded_text("".join(chunks) or "Binary/large changes: inspect artifact manifest.", 6000)
+            if used >= 6000:
+                patch_text = bounded_text(patch_text, 5800) + "\n[Display diff truncated; inspect the versioned snapshot.]"
+            self.artifacts.append(Artifact(uuid.uuid4().hex, "patch", hashlib.sha256(patch_text.encode()).hexdigest(),
+                                           actor, base, paths, patch_text))
         except (OSError, ValueError) as exc:
             self.status, self.reason = "NEEDS_USER", "Artifact capture failed: " + str(exc)
+
+    def _capture_review_snapshot(self):
+        """Deliver current bytes inside the reviewer's isolated read-only root.
+
+        Each revision receives a fresh directory. No existing reviewer files are
+        replaced, and artifact paths come only from our bounded manifest.
+        """
+        source, reviewer = Path(self.workspaces["codex"]), Path(self.workspaces["claude"])
+        entries, digest = snapshot_manifest(source)
+        parent = reviewer
+        for component in (".devos", "reviews"):
+            parent = parent / component
+            if parent.is_symlink() or parent.exists() and not parent.is_dir():
+                raise ValueError("Unsafe reviewer artifact directory")
+            parent.mkdir(exist_ok=True)
+            if reviewer.resolve() not in parent.resolve().parents:
+                raise ValueError("Reviewer artifact directory escapes its root")
+        revision = parent / (digest[:12] + "-" + uuid.uuid4().hex[:12])
+        revision.mkdir()
+        files = revision / "files"
+        files.mkdir()
+        for relative, expected in entries:
+            data = _workspace_bytes(source, relative)
+            if hashlib.sha256(data).hexdigest() != expected:
+                raise ValueError("Builder changed while the review snapshot was copied")
+            target = files / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            target.chmod((source / relative).stat().st_mode & 0o777)
+        if snapshot_manifest(files)[1] != digest or snapshot_manifest(source)[1] != digest:
+            raise ValueError("Review snapshot does not match the current builder artifact")
+        manifest = revision / "manifest.json"
+        manifest.write_bytes(json.dumps(entries, separators=(",", ":"), ensure_ascii=True).encode())
+        relative_root = str(files.relative_to(reviewer))
+        artifact = Artifact(uuid.uuid4().hex, "snapshot", digest, "codex", self._baselines["codex"][1],
+                            tuple(relative for relative, _ in entries),
+                            "Read versioned files at " + relative_root + "; manifest SHA256 " + digest)
+        self.artifacts.append(artifact)
+        self._review_snapshot = (str(files), str(manifest), digest)
+        return artifact, relative_root
+
+    def _assert_review_current(self):
+        if self._review_snapshot is None:
+            raise ValueError("No exact artifact is associated with this review")
+        files, manifest, expected = self._review_snapshot
+        manifest_hash = hashlib.sha256(Path(manifest).read_bytes()).hexdigest()
+        if (manifest_hash != expected or snapshot_manifest(files)[1] != expected or
+                snapshot_manifest(self.workspaces["codex"])[1] != expected):
+            raise ValueError("ARTIFACT_CHANGED / review no longer matches current builder bytes")
+
+    def _send_builder_review(self):
+        snapshot, relative_root = self._capture_review_snapshot()
+        patch = next((item for item in reversed(self.artifacts) if item.producer == "codex" and item.kind == "patch"), None)
+        note = next((item for item in reversed(self.artifacts) if item.producer == "codex" and item.kind == "decision_note"), None)
+        artifacts = tuple(item for item in (note, patch, snapshot) if item is not None)
+        text = ("ACTUAL VERSIONED BUILDER ARTIFACT:\n" + relative_root + "\nSHA256 " + snapshot.sha256 +
+                "\nRead this snapshot, not your initial source copy. The coordinator will verify its hash after review.\n\n" +
+                "Initial acceptance cases (peer public data):\n" + bounded_text(self._acceptance_cases, 1800) +
+                "\n\nBuilder public result:\n" + bounded_text(self._completed_results.get("codex", ""), 1800) +
+                "\n\nACTUAL PATCH (display preview; full files above):\n" + (patch.text if patch else "No included-file changes detected."))
+        expected = ('Review the supplied actual snapshot against the original user task and acceptance cases. '
+                    'Do not execute or claim checks. Return JSON only with verdict (approved, changes_requested, or blocked), '
+                    'summary (nonempty text), and optional acceptance (array of at most 20 short checks). '
+                    'Do not add commands or tool instructions. Approval is a review verdict, not independent validation.')
+        message = self.send_handoff("codex", "claude", bounded_text(text, 12000), artifacts=artifacts, expected=expected)
+        if message is not None and message.status == "delivered":
+            self.phase = "review"
+            self._event("phase", "coordinator", "Review artifact after " + str(self.fix_cycles) + " fix cycles / " + snapshot.sha256[:12])
+
+    def _review_verdict(self):
+        try:
+            document = json.loads(self._completed_results.get("claude", ""))
+        except (ValueError, TypeError):
+            raise ValueError("REVIEW_FORMAT / expected a completed JSON verdict; nothing forwarded")
+        allowed = {"verdict", "summary", "acceptance"}
+        if (not isinstance(document, dict) or set(document) - allowed or
+                document.get("verdict") not in ("approved", "changes_requested", "blocked") or
+                not isinstance(document.get("summary"), str) or not document["summary"].strip() or
+                len(document["summary"].encode()) > 4096):
+            raise ValueError("REVIEW_FORMAT / invalid bounded review verdict; nothing forwarded")
+        acceptance = document.get("acceptance", [])
+        if (not isinstance(acceptance, list) or len(acceptance) > 20 or
+                any(not isinstance(item, str) or not item.strip() or len(item.encode()) > 512 for item in acceptance)):
+            raise ValueError("REVIEW_FORMAT / invalid acceptance checks; nothing forwarded")
+        return document
+
+    def _advance_builder(self):
+        if self.phase == "initial":
+            if not all(card.status == "SUCCEEDED" for card in self.cards.values()):
+                self.status, self.reason = "NEEDS_USER", "Initial Builder/Challenger tasks did not both succeed"
+                return
+            self._acceptance_cases = self._completed_results.get("claude", "")
+            self._send_builder_review()
+        elif self.phase == "review":
+            self._assert_review_current()
+            verdict = self._review_verdict()
+            pair = (self._review_snapshot[2], verdict["verdict"])
+            if pair in self._review_pairs:
+                self.status, self.reason = "NEEDS_USER", "NO_PROGRESS / repeated artifact hash and review verdict"
+                return
+            self._review_pairs.add(pair)
+            self._event("review", "claude", verdict["verdict"] + " / " + verdict["summary"])
+            if verdict["verdict"] == "approved":
+                self.phase, self.status = "review-approved", "NEEDS_USER"
+                self.reason = "REVIEW_APPROVED / current artifact reviewed; run an explicit independent validation check"
+            elif verdict["verdict"] == "blocked":
+                self.phase, self.status, self.reason = "blocked", "NEEDS_USER", "REVIEW_BLOCKED / " + verdict["summary"]
+            elif self.fix_cycles >= 2:
+                self.phase, self.status = "fix-limit", "NEEDS_USER"
+                self.reason = "FIX_REVIEW_LIMIT / two fix cycles exhausted; unresolved review remains visible"
+            else:
+                review_artifact = next(item for item in reversed(self.artifacts) if item.producer == "claude" and item.kind == "decision_note")
+                message = self.send_handoff("claude", "codex", json.dumps(verdict, ensure_ascii=False),
+                                            artifacts=(review_artifact,),
+                                            expected="Fix the concrete review findings in your own editable workspace. Keep scope tied to the original user task. Return a public change summary; never claim checks you did not run.")
+                if message is not None and message.status == "delivered":
+                    self.fix_cycles += 1
+                    self.phase = "fix"
+                    self._event("phase", "coordinator", "Builder fix " + str(self.fix_cycles) + " / max 2")
+        elif self.phase == "fix":
+            current = snapshot_manifest(self.workspaces["codex"])[1]
+            if current == self._review_snapshot[2]:
+                self.status, self.reason = "NEEDS_USER", "NO_PROGRESS / requested fix produced no artifact changes"
+                return
+            self._send_builder_review()
+        else:
+            self.status, self.reason = "NEEDS_USER", "Builder/Challenger awaits explicit user action"
 
     def _dispatch(self, actor, prompt):
         if actor in self.workers:
             raise RuntimeError("Only one active turn per provider session is allowed")
         if self.status != "RUNNING":
             raise RuntimeError("Coordinator is not dispatching")
+        if self.started is not None:
+            self.elapsed = max(0, self.clock() - self.started)
+            if self.elapsed >= self.deadline:
+                self.status, self.reason = "NEEDS_USER", "DEADLINE / no new managed turn dispatched"
+                raise RuntimeError(self.reason)
         session = self.sessions.get(actor)
         command = self.adapters[actor].command(self.profiles[actor], session_id=session)
         worker = self.worker_factory(command, self.workspaces[actor], prompt, actor,
@@ -790,6 +994,10 @@ class AgentCoordinator:
         message_id = message_id or uuid.uuid4().hex
         if message_id in self._seen_messages:
             return next(message for message in self.handoffs if message.message_id == message_id)
+        if self.started is not None and self.clock() - self.started >= self.deadline:
+            self.reason = "DEADLINE / new deliveries stopped"
+            self.stop(status="NEEDS_USER")
+            return None
         if len(self.handoffs) >= self.max_handoffs:
             self.status, self.reason = "NEEDS_USER", "HANDOFF_LIMIT reached; no new delivery"
             return None

@@ -7,6 +7,7 @@ from unittest import mock
 
 from devos.recordings import Recorder, Replay
 from devos.telemetry import DataEvent, TelemetryHub
+from tests.test_telemetry import FakeClock
 
 
 def event(sequence, value=28, mode="live", key="site.active_sessions_60s"):
@@ -136,3 +137,48 @@ class RecordingTests(unittest.TestCase):
         self.path.write_text("\n".join(lines))
         with self.assertRaises(ValueError):
             Replay(self.path)
+
+    def test_outer_recording_offset_is_attached_to_replayed_events_and_checkpoint_samples(self):
+        first = event(1, 10).to_dict()
+        last = event(2, 20).to_dict()
+        documents = [
+            {"record_type": "event", "offset_ms": 2000, "event": first},
+            {"record_type": "checkpoint", "offset_ms": 5000, "events": [first]},
+            {"record_type": "event", "offset_ms": 8000, "event": last},
+        ]
+        self.path.write_text("\n".join(json.dumps(item) for item in documents))
+        replay = Replay(self.path)
+        self.assertEqual(tuple(item.recorded_offset_ms for item in replay.events), (2000, 8000))
+        replay.seek(8)
+        replay.seek(5)  # Force restoration through the checkpoint.
+        sample = replay.telemetry_snapshot().metric("site.active_sessions_60s")
+        self.assertEqual((sample.value, sample.age_seconds), (10, 3))
+
+    def test_replay_preserves_upstream_initial_age_and_live_pulse_ttl(self):
+        clock = FakeClock()
+        clock.value = 100
+        hub = TelemetryHub(clock=clock, wall_clock=clock.wall, demo=False, start_workers=False)
+        self.addCleanup(hub.close)
+        with Recorder(self.path, include_pulse=True) as recorder:
+            hub.add_listener(recorder)
+            old = event(1).to_dict()
+            old["observed_at"] = "2026-10-31T12:00:00Z"
+            hub.submit(old)
+            hub.update(0)
+            pulse = event(2, 72, key="body.heart_rate").to_dict()
+            pulse["payload"]["unit"] = "bpm"
+            pulse["observed_at"] = clock.wall()
+            hub.submit(pulse)
+            hub.update(0)
+            recorder.record(DataEvent("end", "recording.bookmark", "other", "r", 1, "live",
+                                      None, clock.wall(), {}), 20)
+        replay = Replay(self.path)
+        replay.seek(0)
+        online = replay.telemetry_snapshot().metric("site.active_sessions_60s")
+        self.assertEqual((online.value, online.quality, online.age_seconds), (None, "unavailable", 100))
+        pulse = replay.telemetry_snapshot().metric("body.heart_rate")
+        self.assertEqual((pulse.value, pulse.age_seconds), (72, 0))
+        replay.seek(4)
+        self.assertEqual(replay.telemetry_snapshot().metric("body.heart_rate").quality, "stale")
+        replay.seek(11)
+        self.assertIsNone(replay.telemetry_snapshot().metric("body.heart_rate").value)

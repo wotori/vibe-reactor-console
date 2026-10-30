@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "observed_at": null,
+  "measurement_id": "example-site-snapshot-1",
+  "active_sessions": 28,
+  "active_window_seconds": 60,
+  "pageviews_per_minute": 84,
+  "requests_per_second": 12.4,
+  "pages": [
+    {"path": "/", "active_sessions": 9},
+    {"path": "/ekza", "active_sessions": 12},
+    {"path": "/devos", "active_sessions": 7}
+  ],
+  "collection_status": "ok"
+}

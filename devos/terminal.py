@@ -93,7 +93,9 @@ class Canvas:
             if selected:
                 attr |= curses.A_BOLD | curses.A_UNDERLINE
         try:
-            self.screen.addnstr(y, x, str(text), length, attr)
+            # Source/event text must never introduce cursor moves or terminal escapes.
+            safe = "".join(char if char.isprintable() else " " for char in str(text))
+            self.screen.addnstr(y, x, safe, length, attr)
         except Exception as exc:
             if curses is None or not isinstance(exc, curses.error):
                 raise

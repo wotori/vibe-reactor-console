@@ -1,5 +1,9 @@
 from dataclasses import FrozenInstanceError
+import hashlib
 import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -168,6 +172,132 @@ class ArenaTests(unittest.TestCase):
         self.assertIn("+after = 2", artifact.text)
         self.assertIn("ACTUAL PATCH", FakeWorker.instances[2].prompt)
         self.assertFalse(coordinator.verified)
+        self.assertEqual(artifact.sha256, hashlib.sha256(artifact.text.encode()).hexdigest())
+
+    def start_builder_review(self, max_handoffs=6, clock=None):
+        coordinator = self.coordinator(**({"clock": clock} if clock else {}))
+        coordinator.start_mission("Implement a bounded queue", self.workspaces, scenario="builder-challenger",
+                                  max_handoffs=max_handoffs)
+        (Path(self.workspaces["codex"]) / "sample.py").write_text("revision = 2\n")
+        FakeWorker.instances[0].finish("Implemented revision 2")
+        FakeWorker.instances[1].finish("Acceptance: zero capacity, backpressure and close behavior")
+        coordinator.update()
+        return coordinator
+
+    def review_result(self, worker, verdict, summary):
+        worker.finish(json.dumps({"verdict": verdict, "summary": summary, "acceptance": ["Check actual bytes"]}))
+
+    def test_builder_two_ordered_fix_review_cycles_use_current_versioned_bytes(self):
+        coordinator = self.start_builder_review(max_handoffs=5)
+        self.assertEqual([worker.provider for worker in FakeWorker.instances], ["codex", "claude", "claude"])
+        self.assertEqual(coordinator.phase, "review")
+        original_copy = Path(coordinator._review_snapshot[0])
+        self.assertEqual((original_copy / "sample.py").read_text(), "revision = 2\n")
+        self.assertIn("Acceptance: zero capacity", FakeWorker.instances[-1].prompt)
+        self.review_result(FakeWorker.instances[-1], "changes_requested", "Bound zero-capacity writes")
+        coordinator.update()
+        self.assertEqual(FakeWorker.instances[-1].provider, "codex")
+        self.assertEqual(coordinator.fix_cycles, 1)
+        (Path(self.workspaces["codex"]) / "sample.py").write_text("revision = 3\n")
+        FakeWorker.instances[-1].finish("Fixed the first issue")
+        coordinator.update()
+        self.assertEqual(FakeWorker.instances[-1].provider, "claude")
+        first_fix_copy = Path(coordinator._review_snapshot[0])
+        self.assertNotEqual(first_fix_copy, original_copy)
+        self.assertEqual((first_fix_copy / "sample.py").read_text(), "revision = 3\n")
+        self.assertEqual((original_copy / "sample.py").read_text(), "revision = 2\n")
+        self.review_result(FakeWorker.instances[-1], "changes_requested", "Bound writes while closing")
+        coordinator.update()
+        self.assertEqual(FakeWorker.instances[-1].provider, "codex")
+        self.assertEqual(coordinator.fix_cycles, 2)
+        (Path(self.workspaces["codex"]) / "sample.py").write_text("revision = 4\n")
+        FakeWorker.instances[-1].finish("Fixed the second issue")
+        coordinator.update()
+        self.assertEqual((Path(coordinator._review_snapshot[0]) / "sample.py").read_text(), "revision = 4\n")
+        self.review_result(FakeWorker.instances[-1], "approved", "Current snapshot satisfies reviewed acceptance")
+        coordinator.update()
+        self.assertEqual([worker.provider for worker in FakeWorker.instances],
+                         ["codex", "claude", "claude", "codex", "claude", "codex", "claude"])
+        self.assertEqual(len(coordinator.handoffs), 5)
+        self.assertEqual(coordinator.phase, "review-approved")
+        self.assertEqual(coordinator.status, "NEEDS_USER")
+        self.assertFalse(coordinator.verified)
+        self.assertEqual(coordinator.snapshot().fix_cycles, 2)
+        self.assertTrue(all(message.status == "replied" for message in coordinator.handoffs))
+
+    def test_builder_first_review_approval_never_implies_tests_passed(self):
+        coordinator = self.start_builder_review()
+        self.review_result(FakeWorker.instances[-1], "approved", "Reviewed exact snapshot")
+        coordinator.update()
+        self.assertEqual(len(FakeWorker.instances), 3)
+        self.assertEqual(coordinator.fix_cycles, 0)
+        self.assertEqual(coordinator.status, "NEEDS_USER")
+        self.assertIn("independent validation", coordinator.reason)
+        self.assertFalse(coordinator.verified)
+
+    def test_builder_malformed_review_never_forwards_or_executes_commands(self):
+        for invalid in ("not json", json.dumps({"verdict": "approved", "summary": "fine", "commands": ["touch forbidden"]})):
+            with self.subTest(invalid=invalid):
+                FakeWorker.instances = []
+                coordinator = self.start_builder_review()
+                FakeWorker.instances[-1].finish(invalid)
+                coordinator.update()
+                self.assertEqual(len(FakeWorker.instances), 3)
+                self.assertEqual(coordinator.status, "NEEDS_USER")
+                self.assertIn("REVIEW_FORMAT", coordinator.reason)
+
+    def test_builder_no_progress_and_global_handoff_limit_stop_new_turns(self):
+        coordinator = self.start_builder_review()
+        self.review_result(FakeWorker.instances[-1], "changes_requested", "Need an actual code fix")
+        coordinator.update()
+        self.assertEqual(FakeWorker.instances[-1].provider, "codex")
+        FakeWorker.instances[-1].finish("No bytes changed")
+        coordinator.update()
+        self.assertIn("NO_PROGRESS", coordinator.reason)
+        self.assertEqual(len(FakeWorker.instances), 4)
+        FakeWorker.instances = []
+        limited = self.start_builder_review(max_handoffs=1)
+        self.review_result(FakeWorker.instances[-1], "changes_requested", "A bounded fix is required")
+        limited.update()
+        self.assertEqual(len(FakeWorker.instances), 3)
+        self.assertEqual(len(limited.handoffs), 1)
+        self.assertIn("HANDOFF_LIMIT", limited.reason)
+
+    def test_builder_two_fix_limit_and_changed_review_copy_require_user(self):
+        coordinator = self.start_builder_review()
+        for revision in (3, 4):
+            self.review_result(FakeWorker.instances[-1], "changes_requested", "Further defect " + str(revision))
+            coordinator.update()
+            (Path(self.workspaces["codex"]) / "sample.py").write_text("revision = " + str(revision) + "\n")
+            FakeWorker.instances[-1].finish("Updated implementation")
+            coordinator.update()
+        self.review_result(FakeWorker.instances[-1], "changes_requested", "Still unresolved after two fixes")
+        coordinator.update()
+        self.assertEqual(len(FakeWorker.instances), 7)
+        self.assertIn("FIX_REVIEW_LIMIT", coordinator.reason)
+        FakeWorker.instances = []
+        changed = self.start_builder_review()
+        (Path(changed._review_snapshot[0]) / "sample.py").write_text("tampered = True\n")
+        self.review_result(FakeWorker.instances[-1], "approved", "Stale approval")
+        changed.update()
+        self.assertIn("ARTIFACT_CHANGED", changed.reason)
+        self.assertEqual(len(FakeWorker.instances), 3)
+
+    def test_builder_deadline_is_enforced_before_a_followup_dispatch(self):
+        now = [0.0]
+        coordinator = self.start_builder_review(clock=lambda: now[0])
+        now[0] = coordinator.deadline + 1
+        self.review_result(FakeWorker.instances[-1], "changes_requested", "Too late to dispatch")
+        coordinator.update()
+        self.assertEqual(len(FakeWorker.instances), 3)
+        self.assertIn("DEADLINE", coordinator.reason)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "POSIX named pipes")
+    def test_snapshot_ignores_nonregular_files_without_blocking(self):
+        root = Path(self.workspaces["codex"])
+        os.mkfifo(str(root / "not-a-regular-file"))
+        entries, _ = snapshot_manifest(root)
+        self.assertEqual([path for path, digest in entries], ["sample.py"])
 
     def test_workspace_alias_nesting_and_symlink_escape_rejected(self):
         same = self.workspaces["codex"]
@@ -187,16 +317,63 @@ class ArenaTests(unittest.TestCase):
         source = root / "source"
         source.mkdir()
         (source / "real.py").write_text("print('real')\n")
+        (source / "real.py").chmod(0o755)
         (source / ".env").write_text("SECRET=never-copy")
         (source / "escape").symlink_to(root)
         workspaces = prepare_workspaces(source, root / "mission")
         for workspace in workspaces.values():
             self.assertTrue((Path(workspace) / "real.py").exists())
+            self.assertTrue((Path(workspace) / "real.py").stat().st_mode & 0o111)
             self.assertFalse((Path(workspace) / ".env").exists())
             self.assertFalse((Path(workspace) / "escape").exists())
         self.assertEqual(snapshot_manifest(workspaces["codex"]), snapshot_manifest(workspaces["claude"]))
+        base_path = root / "mission" / "base"
+        self.assertEqual((base_path / "real.py").read_text(), "print('real')\n")
+        (source / "real.py").write_text("source changed after preparation\n")
+        (Path(workspaces["codex"]) / "real.py").write_text("builder changed later\n")
+        self.assertEqual((base_path / "real.py").read_text(), "print('real')\n")
+        manifest = json.loads((root / "mission" / "manifest.json").read_text())
+        self.assertEqual(manifest["base_path"], str(base_path.resolve()))
+        self.assertEqual(manifest["sha256"], snapshot_manifest(base_path)[1])
         with self.assertRaisesRegex(ValueError, "existing commit"):
             prepare_workspaces(source, root / "worktree", mode="worktree")
+
+    @unittest.skipUnless(shutil.which("git"), "optional Git worktrees")
+    def test_worktree_base_hashes_head_checkout_not_dirty_source_bytes(self):
+        root = Path(self.temporary.name)
+        source = root / "repository"
+        source.mkdir()
+
+        def git(*args):
+            return subprocess.run(["git", "-C", str(source), *args], check=True,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True).stdout.strip()
+
+        git("init", "--quiet")
+        (source / "source.py").write_text("committed = 1\n")
+        git("add", "source.py")
+        git("-c", "user.name=DEVOS Fixture", "-c", "user.email=fixture@example.invalid",
+            "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "Fixture base")
+        revision = git("rev-parse", "HEAD")
+        (source / "source.py").write_text("dirty = 2\n")
+        (source / "untracked.py").write_text("untracked = True\n")
+        workspaces = prepare_workspaces(source, root / "worktree-mission", mode="worktree")
+        base_path = root / "worktree-mission" / "base"
+        for folder in (base_path, *(Path(path) for path in workspaces.values())):
+            self.assertEqual((folder / "source.py").read_text(), "committed = 1\n")
+            self.assertFalse((folder / "untracked.py").exists())
+        self.assertEqual((source / "source.py").read_text(), "dirty = 2\n")
+        manifest = json.loads((root / "worktree-mission" / "manifest.json").read_text())
+        self.assertEqual(manifest["base"], revision)
+        self.assertEqual(manifest["sha256"], snapshot_manifest(base_path)[1])
+        self.assertNotEqual(manifest["sha256"], snapshot_manifest(source)[1])
+
+    def test_snapshot_preparation_does_not_require_git_executable(self):
+        source = Path(self.workspaces["codex"])
+        destination = Path(self.temporary.name) / "without-git"
+        with patch("devos.agents.subprocess.run", side_effect=FileNotFoundError("git not installed")):
+            workspaces = prepare_workspaces(source, destination)
+        self.assertEqual((destination / "base" / "sample.py").read_text(), "before = 1\n")
+        self.assertEqual(snapshot_manifest(destination / "base"), snapshot_manifest(workspaces["codex"]))
 
     def test_profiles_never_use_bypass_or_latest_session(self):
         for provider in ("codex", "claude"):

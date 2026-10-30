@@ -151,6 +151,16 @@ class DataEvent:
             if quality not in ("ok", "stale", "unavailable", "error"):
                 raise ValueError("Invalid metric quality")
             value = _number(payload.get("value"), nullable=True)
+            definition = METRIC_DEFINITIONS.get(payload["key"])
+            if definition and payload["unit"] != definition[0]:
+                raise ValueError("Metric unit does not match its canonical key")
+            if value is not None:
+                if payload["key"].startswith(("site.", "git.")) and value < 0:
+                    raise ValueError("Counts/rates cannot be negative")
+                if payload["key"] == "body.heart_rate" and not 15 <= value <= 300:
+                    raise ValueError("Heart rate must be 15..300 BPM or null")
+                if payload["key"] == "body.rr_interval" and not 100 <= value <= 5000:
+                    raise ValueError("RR intervals must be 100..5000 ms")
             if quality in ("unavailable", "error") and value is not None:
                 raise ValueError("Unavailable/error measurements must have null value")
             window = payload.get("window_seconds")
@@ -261,44 +271,55 @@ class BoundedInbox:
         self._lock = threading.Lock()
         self.backpressure = False
         self.coalesced = 0
+        self._ticket = 0
+        self._session_tickets = {}
 
     def put(self, event):
         with self._lock:
+            self._ticket += 1
             if event.topic == "metric.sample":
                 key = (event.source_id, event.source_session_id, event.payload["key"])
                 previous = self._gauges.get(key)
-                if previous is not None and previous.sequence >= event.sequence:
+                if previous is not None and previous[1].sequence >= event.sequence:
                     return True
                 if previous is not None:
                     self.coalesced += 1
                 elif len(self._gauges) >= self.gauge_capacity:
                     self.backpressure = True
                     return False
-                self._gauges[key] = event
+                self._session_tickets.setdefault((event.source_id, event.source_session_id), self._ticket)
+                self._gauges[key] = (self._ticket, event)
                 return True
             if len(self._events) >= self.capacity:
                 self.backpressure = True
                 return False
-            self._events.append(event)
+            self._session_tickets.setdefault((event.source_id, event.source_session_id), self._ticket)
+            self._events.append((self._ticket, event))
             return True
 
     def drain(self, limit=256, budget=0.0015):
         result, deadline = [], time.monotonic() + budget
         with self._lock:
-            # Both lanes preserve sequence within a source before the store sees them.
+            # Session IDs are opaque. Preserve their first arrival, then order
+            # sequence within a session so coalesced gauges cannot suppress an
+            # earlier critical lifecycle event from the same producer.
             merged = list(self._events) + list(self._gauges.values())
-            merged.sort(key=lambda event: (event.recorded_offset_ms if event.recorded_offset_ms is not None else 0,
-                                          event.source_id, event.source_session_id, event.sequence))
-            for event in merged:
+            merged.sort(key=lambda entry: (self._session_tickets[(entry[1].source_id, entry[1].source_session_id)],
+                                          entry[1].sequence, entry[0]))
+            for ticket, event in merged:
                 if len(result) >= limit or time.monotonic() >= deadline:
                     break
                 result.append(event)
                 if event.topic == "metric.sample":
                     self._gauges.pop((event.source_id, event.source_session_id, event.payload["key"]), None)
                 else:
-                    self._events.remove(event)
+                    self._events.remove((ticket, event))
             if len(self._events) < self.capacity and len(self._gauges) < self.gauge_capacity:
                 self.backpressure = False
+            remaining_sessions = {(event.source_id, event.source_session_id)
+                                  for _, event in list(self._events) + list(self._gauges.values())}
+            self._session_tickets = {key: value for key, value in self._session_tickets.items()
+                                     if key in remaining_sessions}
         return tuple(result)
 
     def __len__(self):
@@ -650,6 +671,7 @@ class TelemetryHub:
             self._providers.append(_GitProvider(git_root, self._set_repository, **kwargs))
             self._demo_disabled_prefixes.add("git.")
             self._source_selection.setdefault("git.changed_files", "git")
+        self._configured_live_sources = frozenset(provider.source_id for provider in self._providers)
         for provider in self._providers:
             self._set_status(ProviderStatus(provider.source_id, "live"))
             worker = _Worker(provider, self.inbox, max(0.05, interval), self._set_status, clock)
@@ -767,6 +789,24 @@ class TelemetryHub:
         if event.sequence <= self._sequences.get(sequence_key, -1):
             return False
         self._sequences[sequence_key] = event.sequence
+        if event.mode == "live":
+            # The sender's receipt timestamp isn't our transport receipt. Save
+            # local ingestion UTC alongside monotonic age for portable replay.
+            event = replace(event, received_at=self.wall_clock())
+        if event.mode == "live" and source in self._configured_live_sources:
+            metric_key = event.payload.get("key") if event.topic == "metric.sample" else None
+            if metric_key:
+                self._source_selection.setdefault(metric_key, source)
+            # A generic stream can carry a heart bridge too. Once explicitly
+            # connected, synthetic RR must not accompany a live BPM-only feed.
+            if event.topic.startswith("body.") or metric_key and metric_key.startswith("body."):
+                if "body." not in self._demo_disabled_prefixes:
+                    self._rr.clear()
+                    self._heart_contact, self._heart_timing = "unknown", "received_only"
+                self._demo_disabled_prefixes.add("body.")
+                for key in METRIC_DEFINITIONS:
+                    if key.startswith("body."):
+                        self._source_selection.setdefault(key, source)
         if event.topic == "metric.sample":
             payload = event.payload
             key = payload["key"]
@@ -780,13 +820,15 @@ class TelemetryHub:
                 if datetime.fromisoformat(event.observed_at.replace("Z", "+00:00")) < datetime.fromisoformat(old.observed_at.replace("Z", "+00:00")):
                     return False
             initial_age, time_quality = None, "unknown"
-            if event.observed_at and event.mode == "live":
-                wall = datetime.fromisoformat(self.wall_clock().replace("Z", "+00:00"))
+            source_timed = event.mode == "live" or event.mode == "replay" and event.origin_mode == "live"
+            if event.observed_at and source_timed:
+                reference = event.received_at if event.mode == "replay" else self.wall_clock()
+                wall = datetime.fromisoformat(reference.replace("Z", "+00:00"))
                 measured = datetime.fromisoformat(event.observed_at.replace("Z", "+00:00"))
                 difference = (wall - measured).total_seconds()
                 initial_age = max(0.0, difference)
                 time_quality = "clock_skew" if difference < -5 else "source_timestamp"
-            if event.mode in ("demo", "replay"):
+            if event.mode == "demo" or event.mode == "replay" and event.origin_mode == "demo":
                 initial_age, time_quality = 0.0, event.mode + "_timeline"
             sample = MetricSample(key, _number(payload.get("value"), nullable=True), _text(payload["unit"], 32),
                                   source, session, event.sequence, event.observed_at, now, event.mode,
@@ -844,7 +886,8 @@ class TelemetryHub:
 
     def _aged(self, sample, now):
         age = (sample.initial_age_seconds or 0.0) + max(0.0, now - sample.received_monotonic)
-        stale, unavailable = (3.0, 10.0) if sample.key.startswith("body.") and sample.mode == "live" else (self.stale_after, self.unavailable_after)
+        measured_pulse = sample.key.startswith("body.") and (sample.mode == "live" or sample.mode == "replay" and sample.origin_mode == "live")
+        stale, unavailable = (3.0, 10.0) if measured_pulse else (self.stale_after, self.unavailable_after)
         quality, value = sample.quality, sample.value
         if age >= unavailable:
             quality, value = "unavailable", None
