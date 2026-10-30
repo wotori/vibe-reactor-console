@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0 — 2026-10-31
+
+- Added validated binding configurations with linear/log transforms, exact-time EMA, missing-signal policies and immutable provenance.
+- Added a bounded Event Director with cue priorities, debounce/hysteresis, spectator recommendations and deterministic reconstruction.
+- Added an asynchronous Atlas inspector for selected real source/staged/unstaged diff and bounded handoff context.
+- Added local asset catalog parsing and byte/hash verification with explicit fixture/declaration/consumer boundaries.
+- This checkpoint exposes the tested engines; their new interactive controls are integrated in the following workspace checkpoint.
+- Validation: 43 focused engine/Atlas tests plus the complete milestone regression; no model calls.
+
 ## 0.8.0 — 2026-10-31
 
 - Connected seven responsive screens: Cockpit, Visual Lab, Arena, Site, Body, Atlas and Replay.
