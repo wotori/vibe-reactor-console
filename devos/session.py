@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, replace
 from collections import deque
+import codecs
 from types import MappingProxyType
 
 from .modes import DEFAULT_MODE, MODES, MODE_BY_ID
@@ -75,6 +76,9 @@ class Session:
         self.atlas_view, self.status_message = "assets", ""
         self.stream_view = self.palette_open = self.help_open = False
         self.composer_open, self.composer_text = False, ""
+        self.project_editor, self.project_text, self.project_error = False, "", ""
+        self.settings_enabled = True
+        self._project_decoder = codecs.getincrementaldecoder("utf-8")("replace")
         self.inspector_kind, self.report_scroll = None, 0
         self.palette_query, self.palette_index = "", 0
         self.pending_actions = deque()
@@ -123,7 +127,7 @@ class Session:
     @property
     def menu_open(self):
         return (self.menu_kind is not None or self.palette_open or self.help_open or self.composer_open
-                or self.inspector_kind is not None or self.binding_editor)
+                or self.inspector_kind is not None or self.binding_editor or self.project_editor)
 
     @property
     def current_binding_config(self):
@@ -345,6 +349,29 @@ class Session:
         elif 32 <= key < 127 and len(self.composer_text) < 12000:
             self.composer_text += chr(key)
 
+    def project_key(self, key):
+        """A path is literal input, including UTF-8 pasted through curses.getch."""
+        if key == 27:
+            self.project_editor = False
+            self._project_decoder.reset()
+        elif key in (10, 13):
+            self._project_decoder.reset()
+            if "source-project" not in self.pending_actions:
+                self.pending_actions.append("source-project")
+        elif key in (8, 127, 263):
+            self._project_decoder.reset()
+            self.project_text = self.project_text[:-1]
+            self.project_error = ""
+        elif key == 21:
+            self._project_decoder.reset()
+            self.project_text = self.project_error = ""
+        elif 32 <= key <= 255 and key != 127:
+            text = self._project_decoder.decode(bytes((key,)))
+            text = "".join(char for char in text if char.isprintable())
+            if len((self.project_text + text).encode("utf-8")) <= 4096:
+                self.project_text += text
+                self.project_error = ""
+
     @property
     def menu_entries(self):
         return ANIMATIONS if self.menu_kind == "animations" else MODES
@@ -462,6 +489,21 @@ class Session:
         if action == "binding-settings":
             self.binding_editor = True
             self.terminal_focused = False
+            return
+        if action == "source-folder":
+            if self.stream_view:
+                self.status_message = "Leave Stream View to edit your private project folder."
+                return
+            if self.screen_id == "replay":
+                self.status_message = "Replay is read-only; switch screens to select a project folder."
+                return
+            self.project_editor = True
+            self.project_text = self.sources.project_root or ""
+            self.project_error = ""
+            self._project_decoder.reset()
+            self.terminal_focused = False
+            self.menu_kind = None
+            self.help_open = self.palette_open = False
             return
         if action == "director":
             self.director_enabled = not self.director_enabled
@@ -603,6 +645,8 @@ class Session:
             self.cycle_option("auto_cycle")
 
     def update(self, dt):
+        if self.paused or self.menu_open:
+            self.sim.update(0)
         if not self.paused and not self.menu_open:
             self.sim.update(dt * self.speed)
             self.visual_time += dt * self.speed

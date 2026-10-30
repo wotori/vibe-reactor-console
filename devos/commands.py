@@ -28,6 +28,7 @@ def catalog():
         commands += [Command(kind + ":" + value, kind.title() + " / " + value,
                              "Change " + kind + " selection.", kind, value) for value in values]
     actions = (("save", "Save preferences", "Write safe preferences to your config file."),
+               ("source-folder", "Source / choose project folder", "Read random code excerpts from a local project; U opens the path editor."),
                ("binding-settings", "Visual Lab / edit binding", "Edit source, ranges, linear/log transform, smoothing and missing policy."),
                ("director", "Spectator / event director", "Toggle finite event-driven visual changes; terminal focus stays yours."),
                ("capsule-export", "Scene / export capsule", "Save a portable composition without local paths or launch commands."),

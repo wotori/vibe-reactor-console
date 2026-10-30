@@ -7,7 +7,8 @@
 | Область | Работает |
 | --- | --- |
 | Stagecraft | Семь экранов, реестр панелей, focus/zoom, поиск команд, справка, 12 визуалов, native/black background, auto-cycle, scope, intensity и числовые bindings |
-| Композиции | Шесть пресетов, JSON-импорт, сохранение настроек и переносимые Scene Capsules с clocks/bindings/seed; импорт не запускает команды |
+| Композиции | Шесть пресетов, JSON-импорт, автоматическое атомарное сохранение локальных настроек и переносимые Scene Capsules с clocks/bindings/seed; импорт не запускает команды |
+| SOURCE | Выбор папки через U/CLI, фоновый ограниченный индексатор, случайные реальные фрагменты, N/R, provenance и локальное сохранение папки отдельно от экспортов |
 | Workspace | Два независимых tmux PTY, сохранение процессов при смене экранов, фокус, resize, ограниченный ввод и замедление скрытых capture |
 | Site/Body | JSON snapshot, JSONL/FIFO, HTTP polling, TTL/backoff, единицы и окна, LIVE без подмены demo; BPM и RR различаются |
 | Atlas | Выбор узлов, source и staged/unstaged diff, подготовка контекста; fixture протокола и локальный manifest с проверкой байтов |

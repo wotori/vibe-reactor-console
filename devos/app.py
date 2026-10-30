@@ -30,6 +30,7 @@ def action_for_key(key):
         ord("v"): "binding", ord("V"): "binding", ord("i"): "intensity", ord("I"): "intensity",
         ord("d"): "atlas", ord("D"): "atlas", ord("e"): "event", ord("E"): "event",
         ord("h"): "handoff", ord("H"): "handoff", ord("s"): "save", ord("S"): "save",
+        ord("u"): "source-folder", ord("U"): "source-folder",
         ord("["): "replay-back", ord("]"): "replay-forward", ord("!"): "mission-stop",
     }
     actions.update({ord(str(index)): "screen:" + item.id for index, item in enumerate(SCREENS, 1)})
@@ -85,6 +86,9 @@ def dispatch_key(session, runtime, key):
     if key == curses.KEY_RESIZE:
         return
     action = action_for_key(key)
+    if session.project_editor:
+        session.project_key(key)
+        return
     if session.binding_editor:
         if action:
             session.binding_key(action)
@@ -141,7 +145,7 @@ def run(screen, args):
     if hasattr(curses, "set_escdelay"):
         curses.set_escdelay(25)
     settings = runtime_options(args)
-    session = Session(sources=SourceProvider(args.ekza_root, args.bundled), **settings)
+    session = Session(sources=SourceProvider(args.ekza_root, args.bundled, project_root=args.project_root), **settings)
     renderer = Renderer(Canvas(screen))
     raw_input = False
     with_services = Runtime(args, session)

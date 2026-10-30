@@ -100,13 +100,18 @@ def preferences(session):
 
 def save(path, document):
     safe = dict(validate(document), schema_version=1)
+    return _atomic_save(path, safe)
+
+
+def _atomic_save(path, document):
+    """Write an already validated document without truncating the previous file."""
     path = Path(path).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
         with tempfile.NamedTemporaryFile("w", dir=path.parent, prefix=".devos-", delete=False, encoding="utf-8") as stream:
             temporary = Path(stream.name)
-            json.dump(safe, stream, ensure_ascii=False, indent=2, allow_nan=False)
+            json.dump(document, stream, ensure_ascii=False, indent=2, allow_nan=False)
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())

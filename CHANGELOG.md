@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0 — 2026-10-31
+
+- Added U / searchable Source folder selection and `--project-root` for arbitrary local projects, including UTF-8 paths.
+- SOURCE types random real code excerpts with PROJECT provenance, actual line numbers, non-repeating next files and reread-on-R; build activity remains simulated.
+- Added a bounded background scanner/reader with latest-request ownership, explicit fallback and filters for hidden/secret names, binaries, symlinks and dependency/build directories.
+- Automatically save changed visual/options/source preferences after a short debounce and flush on graceful exit; Plasma Reactor now survives a normal restart without pressing S.
+- Keep local project paths separate from portable presets, recordings and capsules. Bundled overrides preserve the selected folder; Replay and `--no-config` do not overwrite user settings.
+- Validation: 388 passing tests, including actual curses restart/folder tests, Runtime persistence/privacy and worker concurrency/limits; staged wheel installed and exercised from an isolated directory. No new dependencies or model calls.
+
 ## 0.10.0 — 2026-10-31
 
 - Connected the binding editor (L): source, ranges, linear/log, exact-time EMA, clamp, missing policy, persistence and spectator director controls.

@@ -3,6 +3,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 from devos import __version__
@@ -13,8 +14,10 @@ PROJECT = Path(__file__).resolve().parents[1]
 
 class CliTests(unittest.TestCase):
     def invoke(self, *args):
-        return subprocess.run([sys.executable, "-m", "devos", *args], cwd=PROJECT,
-                              capture_output=True, text=True, timeout=5)
+        with tempfile.TemporaryDirectory() as config_dir:
+            return subprocess.run([sys.executable, "-m", "devos", *args], cwd=PROJECT,
+                                  env=dict(os.environ, XDG_CONFIG_HOME=config_dir),
+                                  capture_output=True, text=True, timeout=5)
 
     def test_help_version_and_modes_need_no_terminal(self):
         for option, expected in (("--help", "TAB:"), ("--version", "DEV/OS " + __version__),
@@ -81,9 +84,11 @@ class TerminalTests(unittest.TestCase):
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 44, 144, 0, 0))
         original = state(slave)
+        config_dir = tempfile.TemporaryDirectory()
         process = subprocess.Popen(
             [sys.executable, "-m", "devos", "--mode", mode, "--seed", "42", "--duration", "1.0", *extra],
-            cwd=PROJECT, stdin=slave, stdout=slave, stderr=slave, env=dict(os.environ, TERM=term))
+            cwd=PROJECT, stdin=slave, stdout=slave, stderr=slave,
+            env=dict(os.environ, TERM=term, XDG_CONFIG_HOME=config_dir.name))
         output = bytearray()
         pending = list(actions)
         start = time.monotonic()
@@ -118,6 +123,7 @@ class TerminalTests(unittest.TestCase):
                 process.wait()
             os.close(master)
             os.close(slave)
+            config_dir.cleanup()
 
     def test_bare_metal_auto_exit(self):
         output = self.run_terminal(extra=("--background", "black"))

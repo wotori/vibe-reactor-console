@@ -63,7 +63,9 @@ class Renderer:
         else:
             render_screen(self, session, rows, cols)
             self.footer(session, rows, cols)
-        if session.binding_editor:
+        if session.project_editor:
+            self.project_editor(session, rows, cols)
+        elif session.binding_editor:
             self.binding_editor(session, rows, cols)
         elif session.inspector_kind:
             self.inspector(session, rows, cols)
@@ -154,6 +156,26 @@ class Renderer:
             p.put(p.height - 2, 0, text, "accent")
         p.put(p.height - 1, 0, session.status_message or "Raw metrics remain exact; only graphics are smoothed.", "muted")
 
+    def project_editor(self, session, rows, cols):
+        width, height = max(5, min(100, cols - 2)), max(3, min(13, rows - 2))
+        rect = Rect(max(0, (rows - height) // 2), max(0, (cols - width) // 2), height, width)
+        self.canvas.fill(rect)
+        p = self.canvas.panel(rect, "SOURCE / PROJECT FOLDER", "ESC cancels")
+        p.put(0, 0, "Type or paste a project folder; ENTER selects it.", "main", True)
+        if session.stream_view:
+            p.put(2, 0, "STREAM VIEW / private path hidden", "muted")
+        else:
+            value = session.project_text + "_"
+            lines = [value[index:index + max(1, p.width)] for index in range(0, len(value), max(1, p.width))]
+            visible = max(1, p.height - 6)
+            for row, line in enumerate(lines[-visible:]):
+                p.put(2 + row, 0, line, "accent")
+        p.put(p.height - 3, 0, "Blank = scene sources / Ctrl+U clear / Backspace edit", "muted")
+        p.put(p.height - 2, 0, "Random code only / skipped: secrets, binaries, generated folders", "muted")
+        note = "Local folder and visual options are saved automatically." if session.settings_enabled else "Session only / --no-config disables settings saving."
+        p.put(p.height - 1, 0, session.project_error or note,
+              "warn" if session.project_error else "accent")
+
     def handoff_composer(self, session, rows, cols):
         rect = Rect(1, 1, max(3, rows - 3), max(5, cols - 3))
         self.canvas.fill(rect)
@@ -177,10 +199,11 @@ class Renderer:
             "P searchable commands / TAB scenes + options / G visual picker",
             "O next panel / Z zoom / V signal binding / I intensity / D Atlas view",
             "L binding settings: source/ranges/linear/log/EMA/missing; S saves",
+            "U choose SOURCE project folder / N random file / R reread source",
             "F2 or Ctrl+] terminal input / F4 other terminal / F3 source",
             "While INPUT: all text goes to child. Ctrl+] returns to dashboard.",
             "B native/black background / T palette / W scope / A auto visuals",
-            "E demo event / H handoff / S save safe preferences / SPACE pause",
+            "E demo event / H handoff / S save now / settings autosave / SPACE pause",
             "Replay: SPACE play, [ ] seek, P > Replay / next failure",
             "Replay: comma/period speed / M bookmark / } next marker / P capsule",
             "Atlas: arrows select / ENTER source+diff / H prepare context / R refresh",
@@ -263,14 +286,15 @@ class Renderer:
             c.put(1, 2, "[TAB] SCENES  [G] VISUALS  [F2] TERMINAL | " + sim.mode.subtitle, "muted", limit=cols - 4)
 
     def editor(self, sim, rect):
-        p = self.canvas.panel(rect, "01 / SOURCE", sim.snippet.language)
+        p = self.canvas.panel(rect, "01 / SOURCE", "U FOLDER / " + sim.snippet.language)
         p.put(0, 0, compact_path(sim.snippet.path, p.width), "main", True)
         label = sim.source.kind + " / " if sim.snippet.source_path else ""
-        p.put(1, 0, label + sim.snippet.description, "accent" if sim.snippet.source_path else "muted")
+        p.put(1, 0, getattr(sim, "source_note", "") or label + sim.snippet.description,
+              "accent" if sim.snippet.source_path else "muted")
         lines = sim.typed_lines
         available = max(0, p.height - 3)
         start = max(0, len(lines) - available)
-        assembly = sim.snippet.language == "NASM"
+        assembly = sim.snippet.language == "NASM" and sim.source.kind != "PROJECT"
         gutter = 11 if assembly else 6
         for offset, line in enumerate(lines[start:start + available]):
             row, number = 2 + offset, start + offset

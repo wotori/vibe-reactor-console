@@ -92,11 +92,13 @@ def parser():
     result.add_argument("--screen", choices=SCREEN_BY_ID, default="cockpit", help="initial product screen")
     result.add_argument("--preset", metavar="NAME_OR_JSON", help="apply a bundled preset or preference JSON file")
     config = result.add_mutually_exclusive_group()
-    config.add_argument("--config", type=file_path, metavar="JSON", help="read preferences from this JSON file")
-    config.add_argument("--no-config", action="store_true", help="ignore saved user preferences")
+    config.add_argument("--config", type=file_path, metavar="JSON", help="read and save local preferences in this JSON file")
+    config.add_argument("--no-config", action="store_true", help="ignore saved preferences and disable saving for this session")
     result.add_argument("--mode", choices=MODE_BY_ID, default=DEFAULT_MODE, help="initial scene (default: ekza)")
     result.add_argument("--ekza-root", help="Ekza umbrella folder (default: sibling ekza folder)")
-    result.add_argument("--bundled", action="store_true", help="use packaged source snapshots instead of local repositories")
+    result.add_argument("--project-root", type=working_directory, metavar="DIR",
+                        help="scan this selected project's source files for 01 / SOURCE; remembered locally")
+    result.add_argument("--bundled", action="store_true", help="use packaged source snapshots for this session instead of local repositories")
     result.add_argument("--theme", choices=("auto", *PALETTES), help="override each scene's default color palette")
     result.add_argument("--animation", choices=ANIMATION_BY_ID, help="choose a visual independently of the code scene")
     result.add_argument("--consumer", choices=CONSUMER_IDS, default="all", help="protocol example consumer (default: all)")
@@ -152,13 +154,23 @@ def runtime_options(args):
     Resolved attributes remain on ``args`` for the app boundary. The returned
     dictionary contains only Session preferences, never commands or credentials.
     """
-    from . import presets
+    from . import presets, settings
     explicit = getattr(args, "_explicit", frozenset())
     preference_path = Path(args.config) if args.config else presets.config_path()
     preferences = {}
+    local = {}
+    args.config_warning = ""
     if not args.no_config:
-        if args.config or preference_path.exists():
-            preferences.update(presets.load(preference_path))
+        try:
+            if args.config or preference_path.exists():
+                local = settings.load(preference_path)
+                preferences.update({key: value for key, value in local.items() if key in presets.SAFE_KEYS})
+        except (OSError, ValueError, TypeError) as exc:
+            if args.config:
+                raise
+            args.config_warning = "Saved settings ignored: " + str(exc)
+    if "project_root" in local and "project_root" not in explicit:
+        args.project_root = local["project_root"]
     if args.preset:
         preferences.update(presets.resolve(args.preset))
     mapping = {"screen": "screen", "scene": "mode", "visual": "animation", "theme": "theme",
@@ -180,6 +192,10 @@ def runtime_options(args):
     if args.mission_timeout > 3600:
         raise ValueError("--mission-timeout must be at most 3600 seconds")
     if args.replay:
+        if "project_root" in explicit:
+            raise ValueError("--replay cannot be combined with --project-root")
+        # Remembered project access is not necessary to reconstruct a recording.
+        args.project_root = None
         if any((args.terminal, args.terminal_command, args.right_command, args.task, args.mission, args.record,
                 args.source_file, args.source_url, args.source_stream, args.heart_file, args.git_root,
                 args.agents in ("relay", "mission"), args.asset_manifest)):

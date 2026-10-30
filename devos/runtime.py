@@ -7,7 +7,8 @@ import time
 import uuid
 
 from .agents import AgentCoordinator, prepare_workspaces
-from .presets import config_path, preferences, save
+from .presets import config_path, preferences
+from .settings import SettingsStore, local_preferences, save as save_settings
 from .recordings import Recorder, Replay
 from .task_runner import TaskRunner
 from .telemetry import DataEvent, TelemetryHub, utc_now, thaw
@@ -44,6 +45,9 @@ class Runtime:
         self.live_snapshot = None
         self._closed = False
         self._ui_ready = False
+        self.settings = SettingsStore(args.config_path, enabled=not args.no_config and not args.replay)
+        session.settings_enabled = self.settings.enabled
+        self._settings_retry_at = 0
         try:
             self.reset_hub()
             if args.asset_manifest:
@@ -80,6 +84,8 @@ class Runtime:
             if args.right_command:
                 self.terminals.create("right")
             self._ui_ready = True
+            if getattr(args, "config_warning", ""):
+                session.status_message = args.config_warning
         except Exception:
             self.close()
             raise
@@ -185,8 +191,31 @@ class Runtime:
             if session.terminal_focused:
                 self.ensure_terminal()
         elif action == "save":
-            path = save(self.args.config_path, preferences(session))
+            if self.args.no_config or self.replay:
+                session.status_message = "Settings saving is disabled for --no-config and Replay sessions."
+                return
+            path = save_settings(self.args.config_path, local_preferences(session))
             session.status_message = "Preferences saved: " + str(path)
+        elif action == "source-project":
+            if session.screen_id == "replay" or session.stream_view:
+                session.project_error = "Switch to a private live workspace before changing the source folder."
+                return
+            text = session.project_text.strip()
+            if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
+                text = text[1:-1]
+            try:
+                path = Path(text).expanduser().resolve() if text else None
+                if path is not None and not path.is_dir():
+                    raise ValueError("Project folder does not exist or is not a directory.")
+                session.sources.set_project_root(str(path) if path is not None else None)
+            except (OSError, ValueError, RuntimeError) as exc:
+                session.project_error = str(exc)
+                return
+            session.project_editor = False
+            session.project_error = ""
+            session.terminal_visible = session.terminal_focused = False
+            session.choose_screen("cockpit")
+            session.status_message = "Project source indexing / N next file / R reread / U folder" if path else "Scene sources restored / U project folder"
         elif action in ("capsule-export", "mission-export", "atlas-export"):
             parent = Path(self.args.export_dir) if self.args.export_dir else config_path().parent / "exports"
             parent.mkdir(parents=True, exist_ok=True)
@@ -348,6 +377,20 @@ class Runtime:
             session.recording_status = self.recorder.snapshot()
         session.terminal_slots = self.terminals.snapshots()
         session.terminal_frame = self.terminals.snapshot(session.terminal_slot)
+        self.persist_settings()
+
+    def persist_settings(self, force=False):
+        if not self._ui_ready or self.replay:
+            return
+        now = time.monotonic()
+        if not force and now < self._settings_retry_at:
+            return
+        try:
+            self.settings.update(self.session, force=force)
+            self._settings_retry_at = 0
+        except (OSError, ValueError, TypeError) as exc:
+            self._settings_retry_at = now + 5
+            self.session.status_message = "Could not save settings: " + str(exc)
 
     def update_atlas(self, force=False):
         session = self.session
@@ -399,6 +442,7 @@ class Runtime:
         if self._closed:
             return
         self._closed = True
+        self.persist_settings(force=True)
         self.tasks.close()
         final_arena = self.arena.snapshot()
         self.arena.close()
@@ -408,6 +452,7 @@ class Runtime:
         self.capture_recorded_arena(final_arena)
         self.terminals.close()
         self.atlas.close()
+        self.session.sources.close()
         if self.hub:
             # Jobs may publish their final cancellation/exit event during close.
             # Drain those accepted events while the recorder is still alive.

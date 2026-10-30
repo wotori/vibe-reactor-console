@@ -27,6 +27,10 @@ class Simulation:
         self.machine = Machine()
         self.next_log = self.next_sample = 0.0
         self.file_index = -1
+        self._project_generation = self.sources.project_generation
+        self._project_waiting = False
+        self._project_selection = None
+        self._project_reload = False
         self.load_file()
         self.log("SYSTEM", mode.title + " online | all activity simulated")
 
@@ -35,10 +39,25 @@ class Simulation:
         self.logs.append(LogEntry(stamp, kind, message))
 
     def load_file(self, advance=True):
+        if self.sources.project_active:
+            if self.file_index < 0:
+                self.file_index = 0
+                snippet = self.mode.snippets[self.file_index]
+                self._apply_source(snippet, self.sources.snapshot(snippet, "indexing project code…"))
+            self._project_reload = not advance
+            self._project_waiting = True
+            self.sources.request_project(self.rng, self._project_selection, self._project_reload)
+            # The finished excerpt remains visible while the next one is prepared.
+            self.phase = min(self.phase, len(self.mode.phases) - 1)
+            self.phase_time = 0.0
+            self._poll_project()
+            return
         if advance:
             self.file_index = (self.file_index + 1) % len(self.mode.snippets)
-        self.snippet = self.mode.snippets[self.file_index]
-        self.source = self.sources.load(self.snippet)
+        self._apply_source(self.mode.snippets[self.file_index], self.sources.load(self.mode.snippets[self.file_index]))
+
+    def _apply_source(self, snippet, source):
+        self.snippet, self.source = snippet, source
         self.lines = self.source.lines
         self.line_index = self.char_index = 0
         self.credit = self.phase_time = self.file_time = 0.0
@@ -50,6 +69,33 @@ class Simulation:
                 self.source.kind, self.source.first_line, self.source.last_line, self.source.digest))
             if self.source.note:
                 self.log("SOURCE", self.source.note)
+
+    @property
+    def source_note(self):
+        return self.sources.project_status.note if self.sources.project_active else self.source.note
+
+    def _poll_project(self):
+        if not self._project_waiting:
+            return
+        selection = self.sources.poll_project(self.rng, self._project_selection, self._project_reload)
+        if selection is not None:
+            self._project_selection = selection
+            self._project_waiting = False
+            self._apply_source(selection.snippet, selection.source)
+        elif self.sources.project_status.state in ("empty", "error"):
+            self._project_waiting = False
+            self._project_selection = None
+            snippet = self.mode.snippets[self.file_index]
+            self._apply_source(snippet, self.sources.snapshot(snippet, self.sources.project_status.note))
+
+    def poll_sources(self):
+        """Publish completed background work even when animation time is paused."""
+        if self._project_generation != self.sources.project_generation:
+            self._project_generation = self.sources.project_generation
+            self._project_selection = None
+            self._project_waiting = False
+            self.load_file(advance=False)
+        self._poll_project()
 
     @property
     def typed_lines(self):
@@ -65,6 +111,7 @@ class Simulation:
         return min(1.0, 0.55 + (self.phase - 1 + self.phase_time / 1.7) * 0.1125)
 
     def update(self, dt):
+        self.poll_sources()
         if dt <= 0:
             return
         self.elapsed += dt
@@ -85,7 +132,8 @@ class Simulation:
                 self.phase_time = 0.0
                 self.log("TYPED", self.snippet.path + " [display only]")
                 self.log(self.mode.phases[1], self.mode.phase_messages[1])
-        else:
+        elif not (self._project_waiting and self.phase == len(self.mode.phases) - 1):
+            # Hold a completed build while retaining independent telemetry clocks.
             self.phase_time += dt
             while self.phase_time >= 1.7:
                 self.phase_time -= 1.7
