@@ -145,7 +145,9 @@ class EmbeddedTerminal:
         self._size = max(2, width), max(1, height)
         self._frame = TerminalFrame()
         self._lock = threading.Lock()
-        self._input = queue.Queue()
+        self._input = queue.Queue(maxsize=8192)
+        self._queued_bytes = 0
+        self._visible = True
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, name="devos-terminal", daemon=True)
         self._thread.start()
@@ -160,8 +162,27 @@ class EmbeddedTerminal:
 
     def send(self, data):
         """Bytes are literal UTF-8/control input; strings name tmux keys, e.g. Up."""
-        if data:
-            self._input.put(data)
+        if not data:
+            return True
+        if not isinstance(data, (bytes, str)):
+            raise TypeError("terminal input must be bytes or a named key")
+        size = len(data)
+        if size > 16384:
+            raise ValueError("Paste exceeds 16 KiB; split it into smaller chunks.")
+        with self._lock:
+            if self._stop.is_set() or self._queued_bytes + size > 65536:
+                return False
+            try:
+                self._input.put_nowait(data)
+            except queue.Full:
+                return False
+            self._queued_bytes += size
+        return True
+
+    def set_visible(self, visible):
+        """Keep hidden jobs running while reducing captures to two per second."""
+        with self._lock:
+            self._visible = bool(visible)
 
     def close(self):
         self._stop.set()
@@ -192,15 +213,20 @@ class EmbeddedTerminal:
         literal = bytearray()
 
         def flush():
-            if literal:
-                self._invoke("send-keys", "-t", self.target, "-H", *("{:02x}".format(byte) for byte in literal))
-                literal.clear()
+            while literal and not self._stop.is_set():
+                chunk = literal[:2048]
+                self._invoke("send-keys", "-t", self.target, "-H", *("{:02x}".format(byte) for byte in chunk))
+                del literal[:2048]
 
         for _ in range(128):
+            if self._stop.is_set():
+                break
             try:
                 item = self._input.get_nowait()
             except queue.Empty:
                 break
+            with self._lock:
+                self._queued_bytes -= len(item)
             if isinstance(item, bytes):
                 literal.extend(item)
                 if len(literal) >= 2048:
@@ -224,17 +250,21 @@ class EmbeddedTerminal:
             with self._lock:
                 size = self._size
             self._start(size)
+            captured = 0.0
             while not self._stop.is_set():
                 started = time.monotonic()
                 with self._lock:
                     requested = self._size
+                    visible = self._visible
                 if requested != size:
                     self._invoke("resize-window", "-t", self.target, "-x", str(requested[0]), "-y", str(requested[1]))
                     size = requested
                 self._send_pending()
-                frame = self._capture()
-                with self._lock:
-                    self._frame = frame
+                if started - captured >= (1 / 30 if visible else .5):
+                    frame = self._capture()
+                    with self._lock:
+                        self._frame = frame
+                    captured = started
                 self._stop.wait(max(0, 1 / 30 - (time.monotonic() - started)))
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
             with self._lock:

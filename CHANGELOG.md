@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 — 2026-10-31
+
+- Added two persistent, independently focused tmux terminal slots and bounded input queues.
+- Added finite Demo, human-owned Watch and explicit managed Relay/Mission services.
+- Managed adapters discover CLI capabilities, preserve session IDs and bound output, time and deliveries.
+- Added isolated snapshot/worktree preparation, actual patch artifacts and independent validation tied to content hashes.
+- Validation: 30 focused terminal/agent tests, including two real PTYs and two fake JSONL subprocesses; no model calls.
+
 ## 0.6.0 — 2026-10-31
 
 - Added immutable telemetry events, bounded queues and explicit DEMO/LIVE sources.
