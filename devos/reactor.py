@@ -4,6 +4,7 @@ from functools import lru_cache
 import math
 
 from .graphics import Pixel, line_char, line_cells
+from .effects import value
 
 
 CAMERA = 6.0
@@ -16,10 +17,13 @@ def circle_samples(count):
                  for i in range(count + 1))
 
 
-def render_reactor(elapsed, width, height):
+def render_reactor(elapsed, width, height, parameters=None):
     if width < 5 or height < 3:
         return {}
     centre_x, centre_y = (width - 1) / 2, (height - 1) / 2
+    energy = value(parameters, "energy", .5, 0, 1)
+    pulse_bpm = value(parameters, "pulse_bpm", 60 / math.tau * 2.2, 20, 240)
+    particles = int(value(parameters, "particle_count", 22, 0, 200))
     # All three rings fit a fixed bounding sphere. Rotation never pumps the zoom.
     # Characters are roughly twice as tall as they are wide.
     scale = min((width - 3) / 8.8, (height - 1) / 4.4)
@@ -37,7 +41,7 @@ def render_reactor(elapsed, width, height):
 
     # A ray/sphere intersection gives the core a curved silhouette and real depth
     # at each cell, so near orbits cross its face and far orbits disappear behind it.
-    radius = .78 + .025 * math.sin(elapsed * 2.2)
+    radius = .78 + (.015 + energy * .02) * math.sin(elapsed * math.tau * pulse_bpm / 60)
     extent = radius / math.sqrt(1 - (radius / CAMERA) ** 2)
     ramp = ".:-=+*#%@"
     for y in range(max(0, math.floor(centre_y - extent * scale)),
@@ -94,7 +98,7 @@ def render_reactor(elapsed, width, height):
                 plot(x, y, z, char if z > -.3 else ".", tone if z > -.3 else "muted")
 
         # Two counterbalanced tracers per orbit, with time-based fading tails.
-        head = elapsed * (1.15 + index * .24) * (-1 if index == 1 else 1) + index * 2.1
+        head = elapsed * (1.15 + index * .24) * (.5 + energy) * (-1 if index == 1 else 1) + index * 2.1
         direction = -1 if index == 1 else 1
         for offset in (0, math.pi):
             for trail in range(11, -1, -1):
@@ -107,7 +111,7 @@ def render_reactor(elapsed, width, height):
 
     # Sparse deterministic sparks spiral outwards; no RNG, stored trail history
     # or frame-count dependence, so pause and resize do not reset the effect.
-    for index in range(22):
+    for index in range(particles):
         age = (elapsed * .24 + index * .61803398875) % 1
         angle = index * 2.3999632297 + elapsed * .23
         radius = .95 + age * 1.1

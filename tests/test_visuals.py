@@ -4,10 +4,20 @@ import unittest
 from devos.protocol import CONSUMERS, STAGES, STAGE_SECONDS, protocol_frame
 from devos.session import Session
 from devos.surfaces import mesh_for, render_surface
-from devos.visuals import ANIMATIONS, render_animation
+from devos.visuals import ANIMATIONS, ANIMATION_BY_ID, VisualSpec, render_animation
 
 
 class VisualTests(unittest.TestCase):
+    def test_catalog_is_self_contained_and_keeps_original_order(self):
+        self.assertEqual([item.id for item in ANIMATIONS[:6]],
+                         ["avatar", "cube", "sphere", "protocol", "tesseract", "reactor"])
+        self.assertEqual(len(ANIMATION_BY_ID), len(ANIMATIONS))
+        for spec in ANIMATIONS:
+            self.assertIsInstance(spec, VisualSpec)
+            self.assertTrue(callable(spec.renderer))
+            self.assertTrue(spec.caption)
+            self.assertIsInstance(spec.parameters, tuple)
+
     def test_every_animation_is_bounded_ascii_and_moves(self):
         for animation in ANIMATIONS:
             with self.subTest(animation=animation.id):
@@ -158,7 +168,7 @@ class ControlTests(unittest.TestCase):
         original = session.sim
         before = (original.elapsed, original.typed_lines, tuple(original.logs))
         session.handle("animation")
-        for _ in range(len(ANIMATIONS) - 1):
+        for _ in range(next(index for index, spec in enumerate(ANIMATIONS) if spec.id == "reactor")):
             session.handle("down")
         self.assertEqual(session.menu_entries[session.picker_index].id, "reactor")
         session.handle("accept")
@@ -173,9 +183,12 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(session.options.auto_cycle, 15)
         self.assertFalse(session.options.scope)
 
-    def test_automatic_cycle_reaches_reactor_and_wraps_to_avatar(self):
+    def test_automatic_cycle_reaches_reactor_and_new_worlds_then_wraps(self):
         session = Session(animation="tesseract", auto_cycle=8)
         session.update(8)
         self.assertEqual(session.animation, "reactor")
+        session.update(8)
+        self.assertEqual(session.animation, "gravity-well")
+        session.choose_animation(ANIMATIONS[-1].id)
         session.update(8)
         self.assertEqual(session.animation, "avatar")

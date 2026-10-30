@@ -10,7 +10,7 @@ from .session import OPTION_LABELS
 from .simulation import clamp
 from .syntax import spans
 from .terminal import Rect
-from .visuals import render_animation, scope_pixels
+from .visuals import ANIMATION_BY_ID, render_animation, scope_pixels
 
 
 SPINNER = "|/-\\"
@@ -154,15 +154,9 @@ class Renderer:
         hyper = animation == "tesseract"
         title = "EKZA CORE" if sim.mode.id == "ekza" else "HYPERCORE" if hyper else "RUNTIME"
         p = self.canvas.panel(rect, "02 / " + title, animation.upper() + " / {}FPS".format(session.options.fps))
-        captions = {
-            "avatar": "HUMANOID / T-POSE / VERIFIED ASSET",
-            "cube": "SOLID CUBE / FLAT SHADING / 12 TRIANGLES",
-            "sphere": "ASSET SPHERE / LIGHT + NORMALS + UV GRID",
-            "protocol": "EKZA {} / {}".format(session.protocol.kind.upper(), STAGES[session.protocol.stage][0]),
-            "tesseract": "16 VERTICES / 32 EDGES / SO(4)",
-            "reactor": "PLASMA CORE / 3D ORBITS + PARTICLE TRAILS",
-        }
-        p.put(0, 0, captions[animation], "muted")
+        caption = "EKZA {} / {}".format(session.protocol.kind.upper(), STAGES[session.protocol.stage][0]) \
+            if animation == "protocol" else ANIMATION_BY_ID[animation].caption
+        p.put(0, 0, caption, "muted")
         reserved = (3 if hyper else 2) if expanded else 4
         height = max(0, p.height - reserved)
         for (x, y), pixel in render_animation(animation, elapsed, p.width, height, session.protocol).items():

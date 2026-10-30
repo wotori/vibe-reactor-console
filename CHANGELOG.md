@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 — 2026-10-31
+
+- Unified visual descriptors, render functions, captions and binding metadata.
+- Added Gravity Well, Torus Knot, Packet Garden, Twin Core, Voxel Tide and Asset Orrery.
+- Reactor supports numeric energy, particle-count and pulse-frequency bindings.
+- New visuals are selectable through G and participate in automatic cycling.
+- Validation: pure visual bounds, deterministic motion and immutable parameter tests;
+  full milestone regression and wheel checks recorded with the checkpoint.
+
 ## 0.4.1 — 2026-10-31
 
 - Added the product and technical evolution specification: seven screens, data
