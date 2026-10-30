@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.0 — 2026-10-31
+
+- Replaced the fixed sine panel with Math Scope: harmonic interference, moving parabola/tangent, Lissajous, Fourier synthesis, Gaussian wave packet, polar rose, Archimedean spiral and epicycles.
+- Added connected ASCII curves, animated parameters, bright tracers and clock-derived fading trails; rendering stays pure and keeps native/black backgrounds.
+- F selects the next function; searchable Math scope commands select modes, open fullscreen and configure independent automatic rotation. W still controls visibility.
+- Persist function/rotation settings locally and in safe scene capsules; recorded presentation anchors restore changes in Replay without a second local rotation clock.
+- Added CLI scope selection/rotation flags, shared options and mathematical formulas/parameter readouts. All graphs are mathematical illustrations, not measured signals.
+- Validation: 430 passing tests, including actual curses switching/fullscreen, local persistence/capsule and record/rewind checks; isolated wheel installation exercised all eight renderers. Added actual Renderer PNG/GIF previews. No new dependencies or model calls.
+
 ## 0.11.1 — 2026-10-31
 
 - Q, dashboard Ctrl+C and Esc outside menus now request exit confirmation with Stay selected by default; repeated Q never confirms.

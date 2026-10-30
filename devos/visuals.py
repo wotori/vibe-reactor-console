@@ -128,12 +128,6 @@ def render_animation(animation, elapsed, width, height, frame, parameters=None):
 
 
 def scope_pixels(elapsed, width, height):
-    if height <= 0:
-        return {}
-    pixels = {(x, height // 2): Pixel(".", "muted") for x in range(0, width, 2)}
-    for x in range(width):
-        phase = x * .26 - elapsed * math.tau * .65
-        for shift, amplitude, char, tone in ((math.pi / 2, .28, "+", "accent"), (0, .45, "~", "main")):
-            y = round((height - 1) * (.5 - amplitude * math.sin(phase + shift)))
-            pixels[x, y] = Pixel(char, tone, tone == "main")
-    return pixels
+    """Compatibility entry point for the animated harmonic math scope."""
+    from .math_scope import render_scope
+    return render_scope("harmonics", elapsed, width, height)

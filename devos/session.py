@@ -14,6 +14,7 @@ from .screen_registry import SCREENS, SCREEN_BY_ID
 from .telemetry import TelemetrySnapshot
 from .bindings import BindingConfig, BindingEngine, BINDING_BY_ID
 from .director import EventDirector
+from .math_scope import SCOPES, SCOPE_BY_ID
 
 
 PALETTES = {
@@ -33,12 +34,15 @@ class Options:
     palette: str = "auto"
     scope: bool = True
     auto_cycle: float = 0.0
+    scope_mode: str = "harmonics"
+    scope_auto_cycle: float = 0.0
 
 
 OPTION_LABELS = (
-    ("auto_cycle", "Auto visuals"), ("scope", "Sine scope"), ("fps", "Frame cap"),
+    ("auto_cycle", "Auto visuals"), ("scope", "Math scope"), ("fps", "Frame cap"),
     ("consumer", "Consumer"), ("background", "Background"), ("palette", "Palette"),
     ("speed", "Simulation speed"),
+    ("scope_mode", "Scope function"), ("scope_auto_cycle", "Scope auto"),
 )
 
 
@@ -46,13 +50,15 @@ class Session:
     def __init__(self, mode=DEFAULT_MODE, theme=None, speed=1.0, seed=None, sources=None,
                  background="terminal", animation=None, consumer="all", fps=60, auto_cycle=0, scope=True,
                  screen="cockpit", intensity="calm", lab_binding="online", data_mode="auto", arena_mode="demo",
-                 binding_config=None, director_enabled=False, visual_time=0, protocol_time=0, paused=False):
+                 binding_config=None, director_enabled=False, visual_time=0, protocol_time=0, paused=False,
+                 scope_mode="harmonics", scope_auto_cycle=0):
         self.seed = seed
         self.sources = sources if sources is not None else SourceProvider()
         self.mode_id = mode
         self.speed = speed
         self.paused = paused
-        self.options = Options(fps, consumer, background, theme or "auto", scope, auto_cycle)
+        self.options = Options(fps, consumer, background, theme or "auto", scope, auto_cycle,
+                               scope_mode, scope_auto_cycle)
         self.running = True
         self.quit_confirm = self.quit_selected = False
         self.menu_kind = None
@@ -62,6 +68,7 @@ class Session:
         self.option_index = 0
         self.animation_override = animation
         self.visual_time, self.protocol_time, self.auto_elapsed = visual_time, protocol_time, 0.0
+        self.scope_elapsed = 0.0
         self.actual_fps = self.render_ms = 0.0
         self.frames = 0
         self.terminal_visible = self.terminal_focused = False
@@ -120,6 +127,21 @@ class Session:
     @property
     def animation(self):
         return self.animation_override or self.sim.mode.geometry
+
+    @property
+    def effective_scope_mode(self):
+        return self.options.scope_mode
+
+    def choose_scope_mode(self, mode):
+        if mode not in SCOPE_BY_ID:
+            raise ValueError("Unknown scope function: " + str(mode))
+        self.options.scope_mode = mode
+        self.options.scope = True
+        self.scope_elapsed = 0.0
+
+    def next_scope(self):
+        ids = tuple(item.id for item in SCOPES)
+        self.choose_scope_mode(ids[(ids.index(self.effective_scope_mode) + 1) % len(ids)])
 
     @property
     def protocol(self):
@@ -320,10 +342,15 @@ class Session:
             self.choose_screen(values["screen"])
         if "visual" in values:
             self.choose_animation(values["visual"])
+        if "scope_mode" in values:
+            self.choose_scope_mode(values["scope_mode"])
         for key, attribute in (("theme", "palette"), ("fps_cap", "fps"), ("background", "background"),
-                               ("scope", "scope"), ("auto_cycle", "auto_cycle")):
+                               ("scope", "scope"), ("auto_cycle", "auto_cycle"),
+                               ("scope_auto_cycle", "scope_auto_cycle")):
             if key in values:
                 setattr(self.options, attribute, values[key])
+        if "scope_auto_cycle" in values:
+            self.scope_elapsed = 0.0
         for key in ("speed", "intensity", "lab_binding", "seed"):
             if key in values:
                 setattr(self, key, values[key])
@@ -349,6 +376,8 @@ class Session:
             self.choose_screen(value)
         elif kind == "visual":
             self.choose_animation(value)
+        elif kind == "scope-mode":
+            self.choose_scope_mode(value)
         elif kind == "scene":
             self.activate(value)
         elif kind == "preset":
@@ -438,11 +467,15 @@ class Session:
         self.animation_override = ANIMATIONS[(index + 1) % len(ANIMATIONS)].id
 
     def cycle_option(self, key):
+        if key == "scope_mode":
+            self.next_scope()
+            return
         choices = {
             "auto_cycle": (0.0, 8.0, 15.0, 30.0), "scope": (True, False),
             "fps": (30, 60, 90, 120), "consumer": CONSUMER_IDS,
             "background": ("terminal", "black"), "palette": ("auto", *PALETTES),
             "speed": (.5, 1.0, 1.5, 2.0, 4.0),
+            "scope_auto_cycle": (0.0, 8.0, 15.0, 30.0),
         }[key]
         current = self.speed if key == "speed" else getattr(self.options, key)
         index = choices.index(current) if current in choices else -1
@@ -455,10 +488,12 @@ class Session:
             self.protocol_time = 0.0
         elif key == "auto_cycle":
             self.auto_elapsed = 0.0
+        elif key == "scope_auto_cycle":
+            self.scope_elapsed = 0.0
 
     def option_text(self, key):
         value = self.speed if key == "speed" else getattr(self.options, key)
-        if key == "auto_cycle":
+        if key in ("auto_cycle", "scope_auto_cycle"):
             return "OFF" if not value else "{:g}s".format(value)
         if key == "scope":
             return "ON" if value else "OFF"
@@ -466,6 +501,8 @@ class Session:
             return "{} FPS".format(value)
         if key == "speed":
             return "{:g}x".format(value)
+        if key == "scope_mode":
+            return SCOPE_BY_ID[value].title.upper()
         return value.upper()
 
     def activate(self, mode_id):
@@ -684,6 +721,15 @@ class Session:
             self.cycle_option("consumer")
         elif action == "scope":
             self.cycle_option("scope")
+        elif action == "scope-next":
+            self.next_scope()
+        elif action == "scope-auto":
+            self.cycle_option("scope_auto_cycle")
+        elif action == "scope-zoom":
+            self.choose_screen("cockpit")
+            self.options.scope = True
+            self.focused_panel = "scope"
+            self.zoomed = True
         elif action == "auto":
             self.cycle_option("auto_cycle")
 
@@ -694,6 +740,13 @@ class Session:
             self.sim.update(dt * self.speed)
             self.visual_time += dt * self.speed
             self.protocol_time += dt * self.speed
+            if self.options.scope_auto_cycle and not (self.screen_id == "replay" and self.replay_status):
+                self.scope_elapsed += dt
+                steps = int(self.scope_elapsed / self.options.scope_auto_cycle)
+                if steps:
+                    self.scope_elapsed %= self.options.scope_auto_cycle
+                    ids = tuple(item.id for item in SCOPES)
+                    self.options.scope_mode = ids[(ids.index(self.effective_scope_mode) + steps) % len(ids)]
             if self.options.auto_cycle:
                 self.auto_elapsed += dt
                 while self.auto_elapsed >= self.options.auto_cycle:

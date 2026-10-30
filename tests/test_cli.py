@@ -154,7 +154,7 @@ class TerminalTests(unittest.TestCase):
         output = self.run_terminal(mode="ekza", extra=("--bundled", "--fps", "60"), actions=(
             (.15, b"g"), (.22, b"\x1bOC"), (.28, b"\n"),
             (.34, b"\x1bOB\n"), (.40, b"\x1bOD\x1bOB\n"), (.55, b"w"), (.66, b"q")))
-        for label in (b"SWITCH ANIMATION", b"SHARED OPTIONS", b"SINE SCOPE", b"SOLID CUBE"):
+        for label in (b"SWITCH ANIMATION", b"SHARED OPTIONS", b"MATH SCOPE", b"SOLID CUBE"):
             self.assertIn(label, output)
 
     def test_reactor_runs_and_resizes_in_actual_terminal(self):

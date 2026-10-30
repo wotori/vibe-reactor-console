@@ -106,7 +106,8 @@ def safe_parameters(document):
     document = _bounded_document(document)
     aliases = {"animation": "visual", "mode": "scene", "fps": "fps_cap", "palette": "theme"}
     allowed = {"screen", "scene", "visual", "theme", "background", "fps_cap", "speed", "auto_cycle",
-               "scope", "seed", "intensity", "lab_binding", "binding_config", "director_enabled", "consumer"}
+               "scope", "scope_mode", "scope_auto_cycle", "seed", "intensity", "lab_binding",
+               "binding_config", "director_enabled", "consumer"}
     canonical = {aliases.get(key, key): value for key, value in document.items() if aliases.get(key, key) in allowed}
     return validate(dict(canonical, schema_version=1))
 

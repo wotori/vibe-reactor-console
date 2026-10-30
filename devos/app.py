@@ -21,6 +21,7 @@ def action_for_key(key):
         ord("r"): "reload", ord("R"): "reload", ord("b"): "background", ord("B"): "background",
         ord("g"): "animation", ord("G"): "animation", ord("c"): "consumer", ord("C"): "consumer",
         ord("w"): "scope", ord("W"): "scope", ord("a"): "auto", ord("A"): "auto",
+        ord("f"): "scope-next", ord("F"): "scope-next",
         ord("j"): "down", ord("k"): "up", ord("p"): "palette", ord("P"): "palette",
         ord("/"): "palette",
         ord("l"): "binding-settings", ord("L"): "binding-settings",

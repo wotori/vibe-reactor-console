@@ -104,7 +104,7 @@ class RenderingTests(unittest.TestCase):
         screen = Screen(44, 144)
         renderer = Renderer(Canvas(screen, color=False))
         renderer.draw(session)
-        self.assertIn("SINE SCOPE", screen.text())
+        self.assertIn("MATH SCOPE", screen.text())
         session.handle("animation")
         renderer.draw(session)
         for label in ("SWITCH ANIMATION", "T-POSE AVATAR", "SOLID CUBE", "ASSET SPHERE", "SHARED OPTIONS"):
@@ -114,7 +114,7 @@ class RenderingTests(unittest.TestCase):
         session.handle("accept")
         session.handle("escape")
         renderer.draw(session)
-        self.assertNotIn("SINE SCOPE", screen.text())
+        self.assertNotIn("MATH SCOPE", screen.text())
 
     def test_options_are_accessible_in_a_narrow_terminal(self):
         session = Session()

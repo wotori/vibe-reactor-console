@@ -17,6 +17,7 @@ from .protocol import CONSUMER_IDS
 from .visuals import ANIMATION_BY_ID
 from .bindings import BINDING_BY_ID
 from .screen_registry import SCREEN_BY_ID
+from .math_scope import SCOPE_BY_ID
 
 
 class DevosParser(argparse.ArgumentParser):
@@ -103,7 +104,14 @@ def parser():
     result.add_argument("--animation", choices=ANIMATION_BY_ID, help="choose a visual independently of the code scene")
     result.add_argument("--consumer", choices=CONSUMER_IDS, default="all", help="protocol example consumer (default: all)")
     result.add_argument("--auto-cycle", type=positive_float, metavar="SECONDS", help="automatically rotate visuals after this many active seconds")
-    result.add_argument("--no-scope", action="store_true", help="hide the sine-wave panel")
+    result.add_argument("--no-scope", action="store_true", help="hide the math panel")
+    result.add_argument("--scope-mode", choices=SCOPE_BY_ID, default="harmonics", help="animated mathematical function in the math panel")
+    scope_cycle = result.add_mutually_exclusive_group()
+    scope_cycle.add_argument("--scope-auto-cycle", type=positive_float, metavar="SECONDS",
+                             help="rotate math functions after 0.25 to 86400 active seconds")
+    scope_cycle.add_argument("--no-scope-auto-cycle", dest="scope_auto_cycle", action="store_const", const=0,
+                             help="disable automatic math function rotation, including saved settings")
+    result.set_defaults(scope_auto_cycle=0)
     result.add_argument("--intensity", choices=("calm", "cinematic", "showcase"), default="cinematic", help="visual activity preset")
     result.add_argument("--binding", dest="lab_binding", choices=BINDING_BY_ID, default="online",
                         help="signal driving Visual Lab")
@@ -176,6 +184,7 @@ def runtime_options(args):
     mapping = {"screen": "screen", "scene": "mode", "visual": "animation", "theme": "theme",
                "background": "background", "fps_cap": "fps", "speed": "speed", "seed": "seed",
                "auto_cycle": "auto_cycle", "intensity": "intensity", "lab_binding": "lab_binding",
+               "scope_mode": "scope_mode", "scope_auto_cycle": "scope_auto_cycle",
                "binding_config": "binding_config", "director_enabled": "director_enabled", "consumer": "consumer",
                "visual_time": "visual_time", "protocol_time": "protocol_time", "paused": "paused",
                "arena_mode": "agents", "data_mode": "data_mode"}
@@ -189,6 +198,8 @@ def runtime_options(args):
         raise ValueError("--source-token-env requires an explicit --source-url")
     if not 0.25 <= args.speed <= 8:
         raise ValueError("--speed must be between 0.25 and 8")
+    if args.scope_auto_cycle != 0 and not .25 <= args.scope_auto_cycle <= 86400:
+        raise ValueError("--scope-auto-cycle must be between 0.25 and 86400 seconds")
     if args.mission_timeout > 3600:
         raise ValueError("--mission-timeout must be at most 3600 seconds")
     if args.replay:
@@ -229,6 +240,7 @@ def runtime_options(args):
     return {"mode": args.mode, "theme": args.theme, "animation": args.animation,
             "background": args.background, "fps": args.fps, "speed": args.speed,
             "seed": args.seed, "auto_cycle": args.auto_cycle or 0, "scope": not args.no_scope,
+            "scope_mode": args.scope_mode, "scope_auto_cycle": args.scope_auto_cycle,
             "consumer": args.consumer, "screen": args.screen, "intensity": args.intensity,
             "lab_binding": args.lab_binding, "data_mode": args.data_mode, "arena_mode": args.agents,
             "binding_config": args.binding_config, "director_enabled": args.director_enabled,

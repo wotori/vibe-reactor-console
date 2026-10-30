@@ -10,7 +10,8 @@ from .session import OPTION_LABELS
 from .simulation import clamp
 from .syntax import spans
 from .terminal import Rect
-from .visuals import ANIMATION_BY_ID, render_animation, scope_pixels
+from .visuals import ANIMATION_BY_ID, render_animation
+from .math_scope import SCOPE_BY_ID, render_scope, scope_caption
 from .screen_registry import render_screen, screen_layout, SCREEN_BY_ID
 
 
@@ -227,7 +228,8 @@ class Renderer:
             "U choose SOURCE project folder / N random file / R reread source",
             "F2 or Ctrl+] terminal input / F4 other terminal / F3 source",
             "While INPUT: all text goes to child. Ctrl+] returns to dashboard.",
-            "B native/black background / T palette / W scope / A auto visuals",
+            "B native/black background / T palette / W scope / F math / A auto visuals",
+            "P > Math scope: choose function, fullscreen or independent auto-cycle",
             "E demo event / H handoff / S save now / settings autosave / SPACE pause",
             "Replay: SPACE play, [ ] seek, P > Replay / next failure",
             "Replay: comma/period speed / M bookmark / } next marker / P capsule",
@@ -438,9 +440,16 @@ class Renderer:
             p.put(row, 0, line, "muted")
 
     def scope(self, session, rect):
-        p = self.canvas.panel(rect, "06 / SINE SCOPE", "0.65Hz")
-        p.put(0, 0, "sin(t) / cos(t)   [W] toggle", "muted")
-        for (x, y), pixel in scope_pixels(session.visual_time, p.width, max(0, p.height - 1)).items():
+        mode = session.effective_scope_mode
+        spec = SCOPE_BY_ID[mode]
+        auto = " / AUTO" if session.options.scope_auto_cycle else ""
+        p = self.canvas.panel(rect, "06 / MATH SCOPE", spec.title.upper() + auto)
+        caption = spec.formula
+        detail = scope_caption(mode, session.visual_time)
+        if p.width >= 100 and detail != caption:
+            caption += " | " + detail
+        p.put(0, 0, "[F] " + mode.upper() + " / " + caption, "muted")
+        for (x, y), pixel in render_scope(mode, session.visual_time, p.width, max(0, p.height - 1)).items():
             p.put(y + 1, x, pixel.char, pixel.tone, pixel.bold)
 
     def registers(self, sim, rect):
@@ -501,7 +510,7 @@ class Renderer:
         elif cols < 90:
             text = " {} | 1-7 screens P commands ? help F2 input G visuals Q quit".format(state)
         else:
-            text = " {} | 1-7 screens P commands ? help O panel Z zoom F2 input F4 other | TAB scenes G visuals W sine A auto T color B bg Q quit | {:.2g}x | {} lines".format(
+            text = " {} | 1-7 screens P commands ? help O panel Z zoom F2 input F4 other | TAB scenes G visuals W scope F math A auto T color B bg Q quit | {:.2g}x | {} lines".format(
                 state, session.speed, session.sim.total_lines)
         if session.status_message and not session.stream_view and not session.terminal_focused:
             text = " " + session.status_message + " | P commands / ? help"
