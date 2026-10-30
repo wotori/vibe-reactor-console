@@ -3,6 +3,7 @@
 import argparse
 import math
 import os
+import re
 from pathlib import Path
 import shlex
 import sys
@@ -14,6 +15,7 @@ from .session import PALETTES
 from .terminal import curses
 from .protocol import CONSUMER_IDS
 from .visuals import ANIMATION_BY_ID
+from .bindings import BINDING_BY_ID
 from .screen_registry import SCREEN_BY_ID
 
 
@@ -71,6 +73,12 @@ def working_directory(value):
     return str(path)
 
 
+def environment_name(value):
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
+        raise argparse.ArgumentTypeError("expected an environment variable name, not a token value")
+    return value
+
+
 def parser():
     result = DevosParser(
         prog="devos",
@@ -95,15 +103,21 @@ def parser():
     result.add_argument("--auto-cycle", type=positive_float, metavar="SECONDS", help="automatically rotate visuals after this many active seconds")
     result.add_argument("--no-scope", action="store_true", help="hide the sine-wave panel")
     result.add_argument("--intensity", choices=("calm", "cinematic", "showcase"), default="cinematic", help="visual activity preset")
-    result.add_argument("--binding", dest="lab_binding", choices=("online", "pulse", "tests", "queue"), default="online",
+    result.add_argument("--binding", dest="lab_binding", choices=BINDING_BY_ID, default="online",
                         help="signal driving Visual Lab")
     result.add_argument("--data-mode", choices=("auto", "demo", "live"), default="auto", help="select signal provenance; unavailable live data stays unavailable")
     sources = result.add_mutually_exclusive_group()
     sources.add_argument("--source-file", type=file_path, metavar="JSON", help="poll an aggregate site/metric JSON file")
     sources.add_argument("--source-url", type=http_url, metavar="URL", help="poll an HTTP(S) aggregate metric endpoint")
+    result.add_argument("--source-token-env", type=environment_name, metavar="NAME",
+                        help="read the HTTP Bearer token from this environment variable; never saved in presets")
     sources.add_argument("--source-stream", type=file_path, metavar="JSONL", help="tail a local NDJSON event file or FIFO")
     result.add_argument("--heart-file", type=file_path, metavar="JSON", help="read an explicit local heart-rate bridge")
     result.add_argument("--git-root", type=working_directory, metavar="DIR", help="inspect this real repository in Atlas")
+    result.add_argument("--asset-manifest", type=file_path, metavar="JSON", help="explicit local asset catalog for Atlas")
+    result.add_argument("--export-dir", type=file_path, metavar="DIR", help="destination parent for explicit report/capsule/context exports")
+    result.add_argument("--director", dest="director_enabled", action="store_true", help="enable finite spectator visual recommendations")
+    result.set_defaults(binding_config=None, visual_time=0, protocol_time=0, paused=False)
     recording = result.add_mutually_exclusive_group()
     recording.add_argument("--record", type=file_path, metavar="JSONL", help="record normalized events to a new file")
     recording.add_argument("--replay", type=file_path, metavar="JSONL", help="open an event recording with live actions disabled")
@@ -150,6 +164,8 @@ def runtime_options(args):
     mapping = {"screen": "screen", "scene": "mode", "visual": "animation", "theme": "theme",
                "background": "background", "fps_cap": "fps", "speed": "speed", "seed": "seed",
                "auto_cycle": "auto_cycle", "intensity": "intensity", "lab_binding": "lab_binding",
+               "binding_config": "binding_config", "director_enabled": "director_enabled", "consumer": "consumer",
+               "visual_time": "visual_time", "protocol_time": "protocol_time", "paused": "paused",
                "arena_mode": "agents", "data_mode": "data_mode"}
     for key, destination in mapping.items():
         if key in preferences and destination not in explicit:
@@ -157,6 +173,8 @@ def runtime_options(args):
     if "scope" in preferences and "no_scope" not in explicit:
         args.no_scope = not preferences["scope"]
     args.config_path = str(preference_path)
+    if args.source_token_env and not args.source_url:
+        raise ValueError("--source-token-env requires an explicit --source-url")
     if not 0.25 <= args.speed <= 8:
         raise ValueError("--speed must be between 0.25 and 8")
     if args.mission_timeout > 3600:
@@ -164,7 +182,7 @@ def runtime_options(args):
     if args.replay:
         if any((args.terminal, args.terminal_command, args.right_command, args.task, args.mission, args.record,
                 args.source_file, args.source_url, args.source_stream, args.heart_file, args.git_root,
-                args.agents in ("relay", "mission"))):
+                args.agents in ("relay", "mission"), args.asset_manifest)):
             raise ValueError("--replay cannot be combined with live sources, terminals, tasks, missions or recording")
         if "screen" not in explicit:
             args.screen = "replay"
@@ -196,7 +214,9 @@ def runtime_options(args):
             "background": args.background, "fps": args.fps, "speed": args.speed,
             "seed": args.seed, "auto_cycle": args.auto_cycle or 0, "scope": not args.no_scope,
             "consumer": args.consumer, "screen": args.screen, "intensity": args.intensity,
-            "lab_binding": args.lab_binding, "data_mode": args.data_mode, "arena_mode": args.agents}
+            "lab_binding": args.lab_binding, "data_mode": args.data_mode, "arena_mode": args.agents,
+            "binding_config": args.binding_config, "director_enabled": args.director_enabled,
+            "visual_time": args.visual_time, "protocol_time": args.protocol_time, "paused": args.paused}
 
 
 def main(argv=None):
@@ -204,7 +224,7 @@ def main(argv=None):
     args = command.parse_args(argv)
     if args.integrate:
         if any((args.terminal, args.terminal_command, args.right_command, args.task, args.mission,
-                args.source_file, args.source_url, args.source_stream, args.heart_file, args.record, args.replay)):
+                args.source_file, args.source_url, args.source_stream, args.heart_file, args.record, args.replay, args.asset_manifest)):
             command.error("--integrate is a standalone operation; do not combine it with live actions")
         from .integration import integrate_workspaces
         try:

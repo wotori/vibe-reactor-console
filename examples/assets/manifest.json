@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "source_id": "workbench-example",
+  "assets": [
+    {
+      "identity": "ekza:asset:workbench-demo",
+      "kind": "asset",
+      "label": "Workbench text fixture",
+      "revisions": [
+        {
+          "id": "r1",
+          "renditions": [
+            {
+              "id": "tiny",
+              "profile": "example-text-v1",
+              "path": "tiny.txt",
+              "sha256": "51d295539fd6b7ceb153a93c7a6be830beb3701a098ebfb30c606287dc8ca1e8",
+              "byte_count": 125
+            }
+          ],
+          "approvals": [
+            {
+              "consumer": "local-example",
+              "rendition": "tiny",
+              "status": "example-only",
+              "sha256": "51d295539fd6b7ceb153a93c7a6be830beb3701a098ebfb30c606287dc8ca1e8"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

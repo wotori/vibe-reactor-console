@@ -16,12 +16,12 @@ class InputTests(unittest.TestCase):
 
     def test_input_child_gets_dashboard_shortcuts_verbatim(self):
         self.session.terminal_focused = self.session.terminal_visible = True
-        for char in '1234567qpzg!':
+        for char in '1234567qpzg!lM.,}':
             dispatch_key(self.session, self.runtime, ord(char))
         self.assertEqual(self.session.screen_id, 'cockpit')
         self.assertTrue(self.session.running)
         self.assertFalse(self.session.palette_open)
-        self.assertEqual(b''.join(call.args[0] for call in self.runtime.terminals.send.call_args_list), b'1234567qpzg!')
+        self.assertEqual(b''.join(call.args[0] for call in self.runtime.terminals.send.call_args_list), b'1234567qpzg!lM.,}')
         dispatch_key(self.session, self.runtime, 29)
         self.assertFalse(self.session.terminal_focused)
 

@@ -16,7 +16,8 @@ PRESETS = {
     "atlas": {"screen": "atlas", "visual": "asset-orrery", "theme": "neon"},
 }
 SAFE_KEYS = {"screen", "scene", "visual", "theme", "background", "fps_cap", "speed", "auto_cycle",
-             "scope", "seed", "intensity", "lab_binding", "arena_mode", "data_mode"}
+             "scope", "seed", "intensity", "lab_binding", "arena_mode", "data_mode", "binding_config",
+             "visual_time", "protocol_time", "paused", "director_enabled", "consumer"}
 
 
 def config_path():
@@ -28,9 +29,21 @@ def validate(document):
     from .modes import MODE_BY_ID
     from .screen_registry import SCREEN_BY_ID
     from .visuals import ANIMATION_BY_ID
+    from .bindings import BindingConfig, BINDING_BY_ID
+    from .protocol import CONSUMER_IDS
     if (not isinstance(document, dict) or type(document.get("schema_version", 1)) is not int
             or document.get("schema_version", 1) != 1):
         raise ValueError("Preset must be an object with schema_version 1")
+    if document.get("format") == "devos-scene-capsule":
+        presentation = document.get("presentation")
+        if not isinstance(presentation, dict) or not isinstance(presentation.get("parameters"), dict):
+            raise ValueError("Scene capsule requires presentation parameters")
+        flattened = {key: value for key, value in presentation["parameters"].items() if key in SAFE_KEYS}
+        for key in ("visual_time", "protocol_time", "paused"):
+            if key in presentation:
+                flattened[key] = presentation[key]
+        flattened["seed"] = document.get("seed", flattened.get("seed", 42))
+        return validate(flattened)
     result = {key: value for key, value in document.items() if key in SAFE_KEYS}
     if isinstance(result.get("visual"), dict):
         visual = result["visual"]
@@ -40,12 +53,13 @@ def validate(document):
     choices = {"screen": SCREEN_BY_ID, "scene": MODE_BY_ID, "visual": ANIMATION_BY_ID,
                "theme": ("auto", "neon", "matrix", "ice", "ember", "amber"),
                "background": ("terminal", "black"), "intensity": ("calm", "cinematic", "showcase"),
-               "lab_binding": ("online", "pulse", "tests", "queue"),
+               "lab_binding": BINDING_BY_ID, "consumer": CONSUMER_IDS,
                "arena_mode": ("demo", "watch"), "data_mode": ("auto", "demo", "live")}
     for key, values in choices.items():
         if key in result and (not isinstance(result[key], str) or result[key] not in values):
             raise ValueError("Unknown preset " + key + ": " + str(result[key]))
-    for key, lower, upper in (("fps_cap", 10, 120), ("speed", .25, 8), ("auto_cycle", 0, 86400)):
+    for key, lower, upper in (("fps_cap", 10, 120), ("speed", .25, 8), ("auto_cycle", 0, 86400),
+                              ("visual_time", 0, 1e12), ("protocol_time", 0, 1e12)):
         value = result.get(key)
         if key in result and (type(value) not in (int, float) or not math.isfinite(value) or not lower <= value <= upper):
             raise ValueError("Invalid preset " + key)
@@ -53,8 +67,11 @@ def validate(document):
         raise ValueError("fps_cap must be an integer")
     if "seed" in result and type(result["seed"]) is not int:
         raise ValueError("Preset seed must be an integer")
-    if "scope" in result and type(result["scope"]) is not bool:
-        raise ValueError("Preset scope must be boolean")
+    for key in ("scope", "paused", "director_enabled"):
+        if key in result and type(result[key]) is not bool:
+            raise ValueError("Preset " + key + " must be boolean")
+    if "binding_config" in result:
+        result["binding_config"] = BindingConfig.from_dict(result["binding_config"]).to_dict()
     return result
 
 
@@ -76,7 +93,9 @@ def preferences(session):
             "speed": session.speed, "auto_cycle": session.options.auto_cycle,
             "scope": session.options.scope, "seed": session.seed if session.seed is not None else 41,
             "intensity": session.intensity, "lab_binding": session.lab_binding,
-            "arena_mode": "demo" if session.arena_mode != "watch" else "watch", "data_mode": session.data_mode}
+            "arena_mode": "demo" if session.arena_mode != "watch" else "watch", "data_mode": session.data_mode,
+            "binding_config": session.current_binding_config.to_dict(), "consumer": session.options.consumer,
+            "director_enabled": session.director_enabled}
 
 
 def save(path, document):

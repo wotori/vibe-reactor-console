@@ -1,9 +1,8 @@
 """Code scenes, visual selection and shared options, independent of curses."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from collections import deque
 from types import MappingProxyType
-import math
 
 from .modes import DEFAULT_MODE, MODES, MODE_BY_ID
 from .simulation import Simulation, clamp
@@ -12,6 +11,8 @@ from .protocol import CONSUMER_IDS, protocol_frame
 from .visuals import ANIMATIONS
 from .screen_registry import SCREENS, SCREEN_BY_ID
 from .telemetry import TelemetrySnapshot
+from .bindings import BindingConfig, BindingEngine, BINDING_BY_ID
+from .director import EventDirector
 
 
 PALETTES = {
@@ -43,12 +44,13 @@ OPTION_LABELS = (
 class Session:
     def __init__(self, mode=DEFAULT_MODE, theme=None, speed=1.0, seed=None, sources=None,
                  background="terminal", animation=None, consumer="all", fps=60, auto_cycle=0, scope=True,
-                 screen="cockpit", intensity="calm", lab_binding="online", data_mode="auto", arena_mode="demo"):
+                 screen="cockpit", intensity="calm", lab_binding="online", data_mode="auto", arena_mode="demo",
+                 binding_config=None, director_enabled=False, visual_time=0, protocol_time=0, paused=False):
         self.seed = seed
         self.sources = sources if sources is not None else SourceProvider()
         self.mode_id = mode
         self.speed = speed
-        self.paused = False
+        self.paused = paused
         self.options = Options(fps, consumer, background, theme or "auto", scope, auto_cycle)
         self.running = True
         self.menu_kind = None
@@ -57,7 +59,7 @@ class Session:
         self.animation_index = 0
         self.option_index = 0
         self.animation_override = animation
-        self.visual_time = self.protocol_time = self.auto_elapsed = 0.0
+        self.visual_time, self.protocol_time, self.auto_elapsed = visual_time, protocol_time, 0.0
         self.actual_fps = self.render_ms = 0.0
         self.frames = 0
         self.terminal_visible = self.terminal_focused = False
@@ -76,6 +78,24 @@ class Session:
         self.inspector_kind, self.report_scroll = None, 0
         self.palette_query, self.palette_index = "", 0
         self.pending_actions = deque()
+        self.binding_config = BindingConfig.from_dict(binding_config) if binding_config else None
+        self.binding_engine = BindingEngine()
+        self.binding_frame = None
+        self.binding_editor = False
+        self.binding_row = 0
+        self.director_enabled = director_enabled
+        self.director = EventDirector()
+        self.manual_visual_until = 0
+        self.director_frame = None
+        self.atlas_index = 0
+        self.atlas_inspection = self.asset_catalog = None
+        self.asset_manifest_expected = False
+        self.replay_arena = self.replay_presentation = None
+        self.replay_bookmarks = ()
+        self.replay_stage = "visual"
+        self.site_index = 0
+        self.prepared_context = ""
+        self._cue_timeline = None
         self._last_event, self._event_time = None, None
         self.simulations = {}
         self.activate(mode)
@@ -103,7 +123,88 @@ class Session:
     @property
     def menu_open(self):
         return (self.menu_kind is not None or self.palette_open or self.help_open or self.composer_open
-                or self.inspector_kind is not None)
+                or self.inspector_kind is not None or self.binding_editor)
+
+    @property
+    def current_binding_config(self):
+        return self.binding_config or BINDING_BY_ID[self.lab_binding].config
+
+    def select_binding(self, identifier):
+        self.lab_binding = identifier
+        self.binding_config = None
+        self.update_binding(0)
+
+    def update_binding(self, dt):
+        self.binding_frame = self.binding_engine.update(self.telemetry, dt, self.current_binding_config,
+                                                        arena=self.arena, stream_view=self.stream_view)
+
+    def binding_key(self, action):
+        fields = ("source_key", "parameter", "normalization", "input_min", "input_max", "output_min",
+                  "output_max", "smoothing_seconds", "missing", "clamp")
+        if action == "escape":
+            self.binding_editor = False
+            return
+        if action == "save":
+            self.pending_actions.append("save")
+            return
+        if action in ("up", "down"):
+            self.binding_row = (self.binding_row + (-1 if action == "up" else 1)) % len(fields)
+            return
+        if action == "reload":
+            self.binding_config = None
+            self.update_binding(0)
+            return
+        if action not in ("left", "right", "accept"):
+            return
+        config = self.current_binding_config
+        field = fields[self.binding_row]
+        direction = -1 if action == "left" else 1
+        choices = {"source_key": tuple(dict.fromkeys([item.config.source_key for item in BINDING_BY_ID.values()]
+                    + [sample.key for sample in self.telemetry.metrics])),
+                   "parameter": ("energy", "particle_count", "pulse_bpm"), "normalization": ("linear", "log"),
+                   "smoothing_seconds": (0, .15, .4, .8, 1.5, 3), "missing": ("neutral", "fade"),
+                   "clamp": (True, False)}
+        value = getattr(config, field)
+        if field in choices:
+            values = choices[field]
+            index = values.index(value) if value in values else 0
+            value = values[(index + direction) % len(values)]
+        else:
+            span = abs(config.input_max - config.input_min) if field.startswith("input") else abs(config.output_max - config.output_min)
+            value = round(value + direction * max(.1, span / 10), 3)
+        try:
+            updates = {field: value}
+            if field == "source_key":
+                updates.update(source_id=None, expected_unit=None)
+            self.binding_config = replace(config, **updates)
+            self.update_binding(0)
+            self.status_message = "Binding updated; S saves preferences."
+        except ValueError as exc:
+            self.status_message = str(exc)
+
+    @property
+    def atlas_entries(self):
+        if self.atlas_view == "repository":
+            repo = self.telemetry.repository
+            return tuple(sorted(repo.files, key=lambda item: (not item.changed, item.path))) if repo else ()
+        return self.asset_catalog.nodes if self.asset_catalog else ()
+
+    @property
+    def atlas_selected(self):
+        entries = self.atlas_entries
+        return entries[self.atlas_index % len(entries)] if entries else None
+
+    @property
+    def selected_atlas_context(self):
+        selected, inspected = self.atlas_selected, self.atlas_inspection
+        if selected is None or inspected is None or inspected.selection is None:
+            return ""
+        identifier = getattr(selected, "id", None) or getattr(selected, "path", "")
+        if inspected.selection.id != identifier:
+            return ""
+        if (inspected.selection.kind == "repository") != (self.atlas_view == "repository"):
+            return ""
+        return inspected.handoff_context
 
     @property
     def palette_commands(self):
@@ -117,48 +218,53 @@ class Session:
         if screen == "arena":
             self.focused_panel = "terminal-" + self.terminal_slot
 
-    def publish_telemetry(self, snapshot):
+    @property
+    def cue_time(self):
+        return self.visual_time if self._cue_timeline is None else self._cue_timeline
+
+    def publish_telemetry(self, snapshot, dt=None, timeline=None):
         self.telemetry = snapshot
+        self._cue_timeline = timeline
+        if dt is None:
+            # An untimed snapshot has no elapsed interval to smooth across.
+            self.binding_engine.reset()
+        self.update_binding(0 if dt is None else dt)
+        self.director_frame = self.director.update(snapshot.events, self.cue_time, self.intensity,
+            spectator=self.director_enabled, manual_visual=self.animation if self.visual_time < self.manual_visual_until or self.menu_open else None,
+            terminal_focused=self.terminal_focused)
+        if self.director_frame.recommended_visual and self.director_frame.recommended_visual != self.animation:
+            self.animation_override = self.director_frame.recommended_visual
         cue = next((item for item in reversed(snapshot.events) if item.topic in (
             "visual.cue", "agent.handoff.ready", "build.finished", "test.finished", "task.test.completed", "demo.build.finished")), None)
         if cue and cue.id != self._last_event:
             self._last_event = cue.id
             self._event_time = (cue.recorded_offset_ms / 1000.0 if cue.mode == "replay"
-                                and cue.recorded_offset_ms is not None else self.visual_time)
+                                and cue.recorded_offset_ms is not None else self.cue_time)
         elif cue is None:
             self._last_event, self._event_time = None, None
 
     def visual_parameters(self):
-        def value(key, fallback=0):
-            item = self.telemetry.metric(key)
-            return item.value if item and item.value is not None and item.quality in ("ok", "stale") else fallback
-        online = value("site.active_sessions_60s", None)
-        bpm = 0 if self.stream_view else value("body.heart_rate", 0)
         energy = {"calm": .2, "cinematic": .55, "showcase": .9}[self.intensity]
-        if self.lab_binding == "online":
-            energy = min(1.0, math.log1p(max(0, online)) / 8) if online is not None else energy
-        elif self.lab_binding == "pulse" and bpm:
-            energy = min(1., max(0., (bpm - 40) / 140))
-        elif self.lab_binding == "queue" and self.arena:
-            energy = min(1., sum(item.status in ("ready", "pending", "delivering", "delivered") for item in self.arena.handoffs) / 10)
         parameters = {"energy": energy, "particle_count": int(25 + energy * 160),
                       "event_sequence": len(self.telemetry.events),
-                      "burst_age": max(0., self.visual_time - self._event_time) if self._event_time is not None else 1e9,
+                      "burst_age": max(0., self.cue_time - self._event_time) if self._event_time is not None else 1e9,
                       "seed": self.seed if self.seed is not None else 42,
                       "queue_left": 0, "queue_right": 0}
-        if bpm and self.lab_binding == "pulse":
-            parameters["pulse_bpm"] = bpm
-        if self.lab_binding == "queue" and self.arena:
-            for side, recipient in (("left", "codex"), ("right", "claude")):
-                parameters["queue_" + side] = sum(item.recipient == recipient and item.status in (
-                    "ready", "pending", "delivering", "delivered") for item in self.arena.handoffs)
-        if self.lab_binding == "tests":
-            event = next((item for item in reversed(self.telemetry.events) if item.topic in (
-                "demo.build.finished", "build.finished", "test.finished", "task.test.completed")), None)
-            if event:
-                passed, total = event.payload.get("tests_passed"), event.payload.get("tests_total")
-                if type(passed) is int and type(total) is int and 0 <= passed <= total and total > 0:
-                    parameters.update(test_passed=passed, test_total=total, energy=passed / total)
+        config = self.current_binding_config
+        private = self.stream_view and config.source_key.startswith("body.")
+        frame = self.binding_frame
+        if frame is None or frame.config != config or private:
+            frame = BindingEngine().update(self.telemetry, 0, config, arena=self.arena, stream_view=self.stream_view)
+        parameters.update(frame.parameters)
+        if frame.raw is not None:
+            if config.parameter == "particle_count":
+                parameters["energy"] = clamp(float(parameters["particle_count"]) / 200, 0, 1)
+            elif config.parameter == "pulse_bpm":
+                parameters["energy"] = clamp((float(parameters["pulse_bpm"]) - 40) / 140, 0, 1)
+        if self.director_frame:
+            parameters.update(self.director_frame.parameters)
+            if self.director_frame.cue is None and self._event_time is not None:
+                parameters["burst_age"] = max(0, self.cue_time - self._event_time)
         return MappingProxyType(parameters)
 
     def apply_preferences(self, document):
@@ -177,6 +283,16 @@ class Session:
         for key in ("speed", "intensity", "lab_binding", "seed"):
             if key in values:
                 setattr(self, key, values[key])
+        if "binding_config" in values:
+            self.binding_config = BindingConfig.from_dict(values["binding_config"])
+        elif "lab_binding" in values:
+            self.binding_config = None
+        for key in ("visual_time", "protocol_time", "paused", "director_enabled"):
+            if key in values:
+                setattr(self, key, values[key])
+        if "consumer" in values:
+            self.options.consumer = values["consumer"]
+        self.update_binding(0)
         for key, action in (("data_mode", "data-mode"), ("arena_mode", "arena-mode")):
             if key in values and values[key] != getattr(self, key):
                 setattr(self, key, values[key])
@@ -195,7 +311,7 @@ class Session:
             from .presets import resolve
             self.apply_preferences(resolve(value))
         elif kind in ("binding", "intensity"):
-            setattr(self, "lab_binding" if kind == "binding" else "intensity", value)
+            self.select_binding(value) if kind == "binding" else setattr(self, "intensity", value)
         elif kind in ("data", "arena"):
             setattr(self, kind + "_mode", value)
             self.pending_actions.append(kind + "-mode")
@@ -248,6 +364,7 @@ class Session:
     def choose_animation(self, animation):
         self.animation_override = animation
         self.auto_elapsed = 0.0
+        self.manual_visual_until = self.visual_time + 8
 
     def next_animation(self):
         index = next(i for i, item in enumerate(ANIMATIONS) if item.id == self.animation)
@@ -339,15 +456,42 @@ class Session:
         if action == "help":
             self.help_open = True
             return
-        if action in ("inspect-task", "inspect-mission"):
+        if action == "handoff" and self.screen_id == "atlas":
+            self.handle("atlas-context")
+            return
+        if action == "binding-settings":
+            self.binding_editor = True
+            self.terminal_focused = False
+            return
+        if action == "director":
+            self.director_enabled = not self.director_enabled
+            return
+        if action == "replay-stage":
+            self.replay_stage = "arena" if self.replay_stage == "visual" else "visual"
+            return
+        if action in ("inspect-task", "inspect-mission", "inspect-atlas"):
             self.inspector_kind = action.split("-", 1)[1]
             self.report_scroll = 0
+            return
+        if action in ("atlas-next", "atlas-prev"):
+            if self.atlas_entries:
+                self.atlas_index = (self.atlas_index + (-1 if action == "atlas-prev" else 1)) % len(self.atlas_entries)
+                self.pending_actions.append("atlas-select")
+            return
+        if action == "atlas-context":
+            context = self.selected_atlas_context
+            if context and not self.stream_view:
+                self.prepared_context = context
+                self.status_message = "Selected context prepared. Arena H includes it in the editable handoff."
+            else:
+                self.status_message = "Inspect a readable selection before preparing agent context."
             return
         if action == "handoff" and self.arena and self.arena.mode in ("relay", "mission"):
             sender = "codex" if self.terminal_slot == "left" else "claude"
             card = next((item for item in self.arena.cards if item.id == sender), None)
             if card and card.status == "SUCCEEDED":
-                self.composer_text = card.summary
+                self.composer_text = (card.summary + ("\n\nSELECTED WORKSPACE CONTEXT:\n" + self.prepared_context
+                                                     if self.prepared_context else ""))[:12000]
                 self.composer_open = True
             else:
                 self.status_message = "Wait for a completed public reply before handing it off."
@@ -362,8 +506,8 @@ class Session:
             self.zoomed = not self.zoomed
             return
         if action == "binding":
-            values = ("online", "pulse", "tests", "queue")
-            self.lab_binding = values[(values.index(self.lab_binding) + 1) % len(values)]
+            values = tuple(BINDING_BY_ID)
+            self.select_binding(values[(values.index(self.lab_binding) + 1) % len(values)])
             return
         if action == "intensity":
             values = ("calm", "cinematic", "showcase")
@@ -371,13 +515,16 @@ class Session:
             return
         if action == "atlas":
             self.atlas_view = "repository" if self.atlas_view == "assets" else "assets"
+            self.atlas_index = 0
+            self.pending_actions.append("atlas-select")
             return
         if action == "stream":
             self.stream_view = not self.stream_view
             self.terminal_focused = False
             return
         if action in ("save", "record", "event", "handoff", "task", "mission-pause", "mission-stop", "mission-validate",
-                      "replay-play", "replay-next", "replay-back", "replay-forward", "arena-mode"):
+                      "replay-play", "replay-next", "replay-back", "replay-forward", "replay-speed-up", "replay-speed-down",
+                      "replay-bookmark", "replay-next-bookmark", "capsule-export", "mission-export", "atlas-export", "arena-mode"):
             self.pending_actions.append(action)
             return
         if self.menu_open:
@@ -415,6 +562,13 @@ class Session:
                 self.zoomed = False
             else:
                 self.running = False
+        elif self.screen_id == "atlas" and action in ("up", "down"):
+            self.handle("atlas-prev" if action == "up" else "atlas-next")
+        elif self.screen_id == "atlas" and action == "accept":
+            self.handle("inspect-atlas")
+        elif self.screen_id == "site" and action in ("up", "down"):
+            if self.telemetry.pages:
+                self.site_index = (self.site_index + (-1 if action == "up" else 1)) % len(self.telemetry.pages)
         elif action == "tab":
             self.open_menu("modes")
         elif action == "animation":
@@ -424,17 +578,21 @@ class Session:
                 self.pending_actions.append("replay-play")
             else:
                 self.paused = not self.paused
-        elif action == "faster":
-            self.speed = clamp(self.speed * 1.25, 0.25, 8.0)
-        elif action == "slower":
-            self.speed = clamp(self.speed / 1.25, 0.25, 8.0)
+        elif action in ("faster", "slower"):
+            if self.screen_id == "replay" and self.replay_status:
+                self.pending_actions.append("replay-speed-up" if action == "faster" else "replay-speed-down")
+            else:
+                self.speed = clamp(self.speed * (1.25 if action == "faster" else 1 / 1.25), 0.25, 8.0)
         elif action == "theme":
             names = list(PALETTES)
             self.options.palette = names[(names.index(self.theme) + 1) % len(names)]
         elif action == "next":
             self.sim.load_file()
         elif action == "reload":
-            self.sim.load_file(advance=False)
+            if self.screen_id == "atlas":
+                self.pending_actions.append("atlas-refresh")
+            else:
+                self.sim.load_file(advance=False)
         elif action == "background":
             self.cycle_option("background")
         elif action == "consumer":

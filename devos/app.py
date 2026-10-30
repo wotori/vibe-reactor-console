@@ -23,6 +23,9 @@ def action_for_key(key):
         ord("w"): "scope", ord("W"): "scope", ord("a"): "auto", ord("A"): "auto",
         ord("j"): "down", ord("k"): "up", ord("p"): "palette", ord("P"): "palette",
         ord("/"): "palette",
+        ord("l"): "binding-settings", ord("L"): "binding-settings",
+        ord("m"): "replay-bookmark", ord("M"): "replay-bookmark",
+        ord(","): "replay-speed-down", ord("."): "replay-speed-up", ord("}"): "replay-next-bookmark",
         ord("?"): "help", ord("o"): "panel", ord("O"): "panel-prev", ord("z"): "zoom", ord("Z"): "zoom",
         ord("v"): "binding", ord("V"): "binding", ord("i"): "intensity", ord("I"): "intensity",
         ord("d"): "atlas", ord("D"): "atlas", ord("e"): "event", ord("E"): "event",
@@ -82,6 +85,10 @@ def dispatch_key(session, runtime, key):
     if key == curses.KEY_RESIZE:
         return
     action = action_for_key(key)
+    if session.binding_editor:
+        if action:
+            session.binding_key(action)
+        return
     if session.inspector_kind:
         if key == 27 or key in (ord("q"), ord("Q")):
             session.inspector_kind = None

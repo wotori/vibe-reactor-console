@@ -7,6 +7,8 @@ from unittest import mock
 
 from devos.recordings import Recorder, Replay
 from devos.telemetry import DataEvent, TelemetryHub
+from devos.playback import arena_document, presentation_document
+from devos.agents import AgentCard, ArenaSnapshot, ValidationReport
 from tests.test_telemetry import FakeClock
 
 
@@ -182,3 +184,37 @@ class RecordingTests(unittest.TestCase):
         self.assertEqual(replay.telemetry_snapshot().metric("body.heart_rate").quality, "stale")
         replay.seek(11)
         self.assertIsNone(replay.telemetry_snapshot().metric("body.heart_rate").value)
+
+    def test_recorded_public_snapshots_manual_bookmark_and_presentation_roundtrip(self):
+        report = ValidationReport("SUCCEEDED", ("/private/python3", "--token=hidden", "/private/tests"),
+                                  "/private/workspace", None, "a" * 64, 1, .1, 0, "private raw output", "")
+        snapshot = ArenaSnapshot("mission", "READY_FOR_USER", (AgentCard("codex", "Codex", "Builder", "SUCCEEDED", "Done"),),
+                                 (), (), (), 4, 6, 900, verified=True, validation_reports=(report,))
+        with Recorder(self.path) as recorder:
+            recorder.record(DataEvent("presentation", "presentation.changed", "ui", "run", 1, "live", None,
+                                      "2026-10-31T12:00:00Z", presentation_document({"visual": "reactor", "speed": 2}, 10, 20)), 0)
+            self.assertTrue(recorder.bookmark("Saved /private/workspace", 1))
+            recorder.record(DataEvent("arena", "arena.snapshot", "ui", "run", 2, "live", None,
+                                      "2026-10-31T12:00:00Z", arena_document(snapshot, include_paths=True)), 2)
+        text = self.path.read_text()
+        for private in ("/private/workspace", "--token=hidden", "private raw output"):
+            self.assertNotIn(private, text)
+        replay = Replay(self.path)
+        replay.seek(2)
+        self.assertTrue(replay.arena_snapshot().verified)
+        self.assertEqual(replay.arena_snapshot().validation_reports[0].exit_code, 0)
+        self.assertEqual(replay.presentation_snapshot().visual_time, 14)
+        self.assertEqual(replay.bookmarks[0].kind, "manual")
+        self.assertEqual(replay.bookmarks[0].offset, 1)
+
+    def test_malformed_record_shapes_and_nonfinite_timing_are_clear_errors(self):
+        for document in ([], True, {"record_type": "manifest", "schema_version": True, "format": "devos-event-log"},
+                         {"record_type": "manifest", "schema_version": 1, "format": "devos-event-log", "seed": True},
+                         {"record_type": "manifest", "schema_version": 1, "format": "devos-event-log", "parameters": []}):
+            self.path.write_text(json.dumps(document))
+            with self.subTest(document=document), self.assertRaises(ValueError):
+                Replay(self.path)
+        self.path.unlink()
+        with Recorder(self.path) as recorder:
+            with self.assertRaises(ValueError):
+                recorder.record(event(1), float("nan"))

@@ -150,6 +150,8 @@ class FakeRecorder:
 
 class FakeReplay:
     instances = []
+    bookmarks = ()
+    events, event_offsets = (), ()
 
     def __init__(self, path):
         self.path, self.playhead, self.playing, self.closed = path, 0, False, False
@@ -163,6 +165,13 @@ class FakeReplay:
 
     def telemetry_snapshot(self):
         return self.state
+
+    def presentation_snapshot(self):
+        from devos.playback import PresentationSnapshot
+        return PresentationSnapshot({"visual": "cube"}, self.playhead, self.playhead)
+
+    def arena_snapshot(self):
+        return ArenaSnapshot("replay", "NOT RECORDED", (), (), (), (), self.playhead, 0, 0)
 
     def update(self, dt):
         if self.playing:
@@ -219,20 +228,21 @@ class RuntimeTests(unittest.TestCase):
         first = runtime.recorder
         runtime.submit(self.event(1))
         runtime.update(.1)
-        self.assertEqual([event.id for event, _ in first.events], ["event-1"])
+        self.assertEqual([event.id for event, _ in first.events if event.id.startswith("event-")], ["event-1"])
+        self.assertEqual([event.topic for event, _ in first.events[:2]], ["presentation.changed", "arena.snapshot"])
         runtime.action("record")
         self.assertTrue(first.closed)
         runtime.start_recording("/not-written/second.jsonl")
         second = runtime.recorder
         runtime.submit(self.event(2))
         runtime.update(.1)
-        self.assertEqual([event.id for event, _ in second.events], ["event-2"])
+        self.assertEqual([event.id for event, _ in second.events if event.id.startswith("event-")], ["event-2"])
         old = runtime.hub
         runtime.reset_hub()
         self.assertTrue(old.closed)
         runtime.submit(self.event(3))
         runtime.update(.1)
-        self.assertEqual([event.id for event, _ in second.events], ["event-2", "event-3"])
+        self.assertEqual([event.id for event, _ in second.events if event.id.startswith("event-")], ["event-2", "event-3"])
 
     def test_a_new_recording_uses_its_own_relative_clock(self):
         runtime, _ = self.runtime()
@@ -240,7 +250,7 @@ class RuntimeTests(unittest.TestCase):
         runtime.start_recording("/not-written/later.jsonl")
         self.clock = 100.5
         runtime.record_event(self.event(1))
-        self.assertAlmostEqual(runtime.recorder.events[0][1], .5)
+        self.assertEqual([offset for event, offset in runtime.recorder.events if event.id == "event-1"], [.5])
 
     def test_replay_manifest_and_controls_never_launch_live_jobs(self):
         runtime, session = self.runtime("--replay", "/not-read/fixture.jsonl")

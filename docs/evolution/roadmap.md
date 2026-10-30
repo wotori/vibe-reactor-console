@@ -1,7 +1,21 @@
 # План следующей эволюции
 
-Статус: backlog по спецификации. Номера версий ниже предлагаемые.
-Объём S/M/L — относительная сложность, не обещание календарного срока.
+Статус реализации обновлён 2026-10-31. Номера релизов ниже — первоначальное
+планирование; фактическая история находится в [CHANGELOG.md](../../CHANGELOG.md).
+
+| Пункты | Состояние |
+| --- | --- |
+| S01–S08 | Реализованы: registry, семь экранов, команды, capsules, события, configurable bindings/EMA, визуалы и конечный Demo |
+| W01–W06 | Реализованы: два PTY, Watch, выбранный source/diff Atlas, checks, запись/replay и Stream View |
+| D01–D03, D05, D07 | Реализованы: JSON/HTTP/FIFO, Site/Body, TTL, bounded Event Director и intensity profiles |
+| D04 | Универсальный endpoint adapter готов; подключение и сверка конкретного сайта требуют выбранного источника и доступа |
+| D06 | JSON BPM/RR bridge готов; BLE/phone integration и проверка требуют конкретного оборудования |
+| A01–A07 | Реализованы через CLI: capability checks, Relay, bounded fix/review, Split candidate, публичные отчёты и Replay Arena |
+
+SDK approval bridge остаётся отдельной будущей интеграцией. CLI capabilities
+описаны в [agent-arena.md](../agent-arena.md); границы — в
+[implementation.md](../implementation.md). Объём S/M/L в исходном backlog
+не является обещанием календарного срока.
 
 ## Релиз 0.5 — Stagecraft: сначала ощутимый фан
 

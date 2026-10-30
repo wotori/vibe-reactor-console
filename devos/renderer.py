@@ -63,7 +63,9 @@ class Renderer:
         else:
             render_screen(self, session, rows, cols)
             self.footer(session, rows, cols)
-        if session.inspector_kind:
+        if session.binding_editor:
+            self.binding_editor(session, rows, cols)
+        elif session.inspector_kind:
             self.inspector(session, rows, cols)
         elif session.composer_open:
             self.handoff_composer(session, rows, cols)
@@ -127,6 +129,31 @@ class Renderer:
             p.put(2, 0, "No matching commands", "muted")
         p.put(p.height - 1, 0, "Type to filter / arrows select / ENTER run / no shell execution", "muted")
 
+    def binding_editor(self, session, rows, cols):
+        rect = Rect(1, 1, max(3, rows - 3), max(5, cols - 3))
+        self.canvas.fill(rect)
+        p = self.canvas.panel(rect, "VISUAL LAB / BINDING SETTINGS", "ESC returns")
+        config = session.current_binding_config
+        fields = (("source_key", "Source"), ("parameter", "Visual parameter"), ("normalization", "Normalization"),
+                  ("input_min", "Input minimum"), ("input_max", "Input maximum"),
+                  ("output_min", "Output minimum"), ("output_max", "Output maximum"),
+                  ("smoothing_seconds", "EMA seconds"), ("missing", "Missing signal"), ("clamp", "Clamp"))
+        p.put(0, 0, "UP/DOWN select / LEFT/RIGHT edit / S save / R reset", "main", True)
+        count = max(1, min(len(fields), p.height - 4))
+        start = max(0, session.binding_row - count + 1)
+        for row, (field, label) in enumerate(fields[start:start + count]):
+            selected = start + row == session.binding_row
+            value = getattr(config, field)
+            text = "{} {:<20} {}".format(">" if selected else " ", label, value)
+            p.put(2 + row, 0, text, "main" if selected else "text", selected, selected)
+        frame = session.binding_frame
+        if frame:
+            private = session.stream_view and config.source_key.startswith("body.")
+            text = "PRIVATE / STREAM VIEW" if private else "{} / {} / raw {} -> smoothed {}".format(
+                frame.mode.upper(), frame.quality.upper(), frame.raw, None if frame.smoothed is None else round(frame.smoothed, 3))
+            p.put(p.height - 2, 0, text, "accent")
+        p.put(p.height - 1, 0, session.status_message or "Raw metrics remain exact; only graphics are smoothed.", "muted")
+
     def handoff_composer(self, session, rows, cols):
         rect = Rect(1, 1, max(3, rows - 3), max(5, cols - 3))
         self.canvas.fill(rect)
@@ -149,11 +176,14 @@ class Renderer:
             "1 Cockpit / 2 Visual Lab / 3 Arena / 4 Site / 5 Body / 6 Atlas / 7 Replay",
             "P searchable commands / TAB scenes + options / G visual picker",
             "O next panel / Z zoom / V signal binding / I intensity / D Atlas view",
+            "L binding settings: source/ranges/linear/log/EMA/missing; S saves",
             "F2 or Ctrl+] terminal input / F4 other terminal / F3 source",
             "While INPUT: all text goes to child. Ctrl+] returns to dashboard.",
             "B native/black background / T palette / W scope / A auto visuals",
             "E demo event / H handoff / S save safe preferences / SPACE pause",
             "Replay: SPACE play, [ ] seek, P > Replay / next failure",
+            "Replay: comma/period speed / M bookmark / } next marker / P capsule",
+            "Atlas: arrows select / ENTER source+diff / H prepare context / R refresh",
             "Tasks: supply --task, then P > Task / run configured check",
             "Arena Demo is simulated. Watch terminals are human-owned.",
             "Managed: explicit --mission + separate workspaces, finite exchanges.",
@@ -179,6 +209,21 @@ class Renderer:
                          "ARGV " + repr(task.argv), "CWD " + task.cwd,
                          "REVISION " + task.revision, "EXIT " + str(task.exit_code),
                          "ERROR " + task.error, "OUTPUT" + (" / TRUNCATED" if task.truncated else ""), task.output]
+        elif session.inspector_kind == "atlas":
+            item = session.atlas_inspection
+            if item:
+                lines = [item.provenance, "STATE " + item.state + " / " + item.quality,
+                         "PATH " + item.path, "REVISION " + item.revision, "STATUS " + item.status_code,
+                         "BYTES " + str(item.size_bytes), "SHA256 " + (item.sha256 or "unknown")
+                         + (" / COMPLETE" if item.hash_complete else " / NOT A COMPLETE HASH"),
+                         "VERIFICATION " + item.verification, item.error]
+                for key, value in item.metadata:
+                    lines.append(str(key) + ": " + str(value))
+                lines += ["UNSTAGED DIFF", item.unstaged_diff or "[no unstaged diff]",
+                          "STAGED DIFF", item.staged_diff or "[no staged diff]",
+                          "SOURCE PREVIEW" + (" / TRUNCATED" if item.truncated else ""),
+                          item.source_text or ("[binary content]" if item.binary else "[no text source]"),
+                          "H prepares this selection for the next editable Arena handoff."]
         elif session.arena:
             arena = session.arena
             lines = [arena.mode.upper() + " / " + arena.status,
@@ -402,6 +447,8 @@ class Renderer:
         state = "VISUAL PAUSED / " + provenance if session.paused and session.screen_id != "replay" else provenance
         if session.terminal_focused:
             text = " TERMINAL INPUT | F2 / Ctrl+] dashboard | F3 source | Ctrl+C interrupts child | Tab/arrows go to shell"
+        elif session.screen_id == "replay":
+            text = " {} | SPACE play [ ] seek , . speed M bookmark }} next | P commands ? help Q quit".format(state)
         elif cols < 90:
             text = " {} | 1-7 screens P commands ? help F2 input G visuals Q quit".format(state)
         else:

@@ -252,3 +252,20 @@ live token transcript, guaranteed spending cap or managed-session restoration
 across DEV/OS restarts is implemented. Outputs remain in the explicit working
 directories. Event recordings contain normalized Arena events rather than the
 full managed-session state; replay never launches agent turns or terminal jobs.
+
+## Public reports and Replay Arena
+
+**P → Arena / export public mission report** creates a new JSON/Markdown report
+under `--export-dir` (or the DEV/OS config exports directory). It includes public
+results, artifact hashes, actual recorded check evidence and remaining work.
+Paths, model session identities, raw check output and credential-like public text
+are redacted by default. Export itself runs no command and never overwrites an
+existing report directory.
+
+New event recordings contain bounded `arena.snapshot` and `presentation.changed`
+states. In Replay Studio, choose **P → Replay / toggle Arena reconstruction** to
+inspect the recorded cards/handoffs/checks. Playback does not resume model sessions
+or expose human-owned terminals. **M** adds a marker; during recording the marker
+is written into the log, while markers added to a loaded replay stay in memory
+and can be included in a portable capsule. Playback speed and seek preserve
+source values and recorded simulation clock anchors.

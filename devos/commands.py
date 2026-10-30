@@ -17,16 +17,25 @@ def catalog():
     from .presets import PRESETS
     from .screen_registry import SCREENS
     from .visuals import ANIMATIONS
+    from .bindings import BINDING_BY_ID
     commands = [Command("screen:" + item.id, "Screen / " + item.title, item.description, "screen", item.id) for item in SCREENS]
     commands += [Command("visual:" + item.id, "Visual / " + item.title, item.description, "visual", item.id) for item in ANIMATIONS]
     commands += [Command("scene:" + item.id, "Code scene / " + item.title, item.description, "scene", item.id) for item in MODES]
     commands += [Command("preset:" + key, "Preset / " + key, "Apply preferences; no commands are launched.", "preset", key) for key in PRESETS]
-    for kind, values in (("binding", ("online", "pulse", "tests", "queue")),
+    for kind, values in (("binding", tuple(BINDING_BY_ID)),
                          ("intensity", ("calm", "cinematic", "showcase")),
                          ("data", ("auto", "demo", "live")), ("arena", ("demo", "watch"))):
         commands += [Command(kind + ":" + value, kind.title() + " / " + value,
                              "Change " + kind + " selection.", kind, value) for value in values]
     actions = (("save", "Save preferences", "Write safe preferences to your config file."),
+               ("binding-settings", "Visual Lab / edit binding", "Edit source, ranges, linear/log transform, smoothing and missing policy."),
+               ("director", "Spectator / event director", "Toggle finite event-driven visual changes; terminal focus stays yours."),
+               ("capsule-export", "Scene / export capsule", "Save a portable composition without local paths or launch commands."),
+               ("inspect-atlas", "Atlas / inspect selected source and diff", "Read the selected node; Git and files are inspected on a worker."),
+               ("atlas-context", "Atlas / prepare agent context", "Include the selected source/diff in your next editable managed handoff."),
+               ("atlas-export", "Atlas / export selected context", "Write the selected context to a new local text file."),
+               ("atlas-next", "Atlas / next node", "Select the next repository file or asset node."),
+               ("atlas-prev", "Atlas / previous node", "Select the previous repository file or asset node."),
                ("record", "Recording / start or stop", "Record normalized events; excludes pulse and terminal text."),
                ("stream", "Stream View / toggle", "Hide terminal text, paths and personal measurements."),
                ("zoom", "Panel / zoom", "Expand the selected panel."),
@@ -39,8 +48,14 @@ def catalog():
                ("task", "Task / run configured check", "Execute the command explicitly supplied using --task."),
                ("inspect-task", "Task / inspect last result", "Read actual output, exit code and revision."),
                ("inspect-mission", "Arena / inspect artifacts and checks", "Read public results, actual patches and independent check evidence."),
+               ("mission-export", "Arena / export public mission report", "Save results, artifacts, check evidence and remaining work."),
                ("replay-play", "Replay / play or pause", "Replay events without invoking live actions."),
                ("replay-next", "Replay / next failure", "Seek to the next recorded failure."),
+               ("replay-bookmark", "Replay / add bookmark", "Mark the current playhead."),
+               ("replay-next-bookmark", "Replay / next bookmark", "Seek to a manual or automatic marker."),
+               ("replay-speed-up", "Replay / faster", "Increase playhead speed; source measurements stay unchanged."),
+               ("replay-speed-down", "Replay / slower", "Decrease playhead speed."),
+               ("replay-stage", "Replay / toggle Arena reconstruction", "Inspect recorded cards, handoffs and independent check evidence."),
                ("help", "Help / shortcuts", "Show controls for the current screen."))
     commands += [Command("action:" + key, title, description, "action", key) for key, title, description in actions]
     return tuple(commands)

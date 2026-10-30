@@ -22,6 +22,25 @@ class WorkspaceCliTests(unittest.TestCase):
         self.assertIn(b'UNAVAILABLE', output)
         self.assertIn(b'LIVE', output)
 
+    def test_binding_form_owns_keys_and_closes_in_real_curses(self):
+        output = self.run_terminal(extra=('--no-config', '--bundled', '--screen', 'visual-lab'), actions=(
+            (.16, b'l'), (.30, b'\x1b[B\x1b[C'), (.42, b'r'), (.58, b'\x1b'), (.76, b'q')))
+        self.assertIn(b'BINDING SETTINGS', output)
+        self.assertIn(b'EMA seconds', output)
+
+    def test_palette_exports_a_reloadable_capsule_from_real_curses(self):
+        import tempfile
+        from pathlib import Path
+        from devos.presets import load
+        with tempfile.TemporaryDirectory() as directory:
+            self.run_terminal(extra=('--no-config', '--bundled', '--export-dir', directory), actions=(
+                (.18, b'p'), (.32, b'Scene / export capsule\n'), (.85, b'q')))
+            paths = tuple(Path(directory).glob('*.capsule.json'))
+            self.assertEqual(len(paths), 1)
+            settings = load(paths[0])
+            self.assertIn('binding_config', settings)
+            self.assertNotIn('terminal_command', settings)
+
     @unittest.skipUnless(shutil.which('tmux'), 'optional tmux')
     def test_two_real_terminal_slots_route_input_and_survive_screen_switch(self):
         output = self.run_terminal(extra=('--no-config', '--screen', 'arena', '--agents', 'watch',

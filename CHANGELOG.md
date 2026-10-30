@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0 — 2026-10-31
+
+- Connected the binding editor (L): source, ranges, linear/log, exact-time EMA, clamp, missing policy, persistence and spectator director controls.
+- Atlas selects files/nodes, reads actual source and staged/unstaged diff, verifies local manifest bytes and prepares/export contexts without launching jobs.
+- Replay restores recorded presentation/clock changes and public Arena cards, handoffs, artifacts and independent checks.
+- Added playback speed, manual/automatic bookmarks, safe Scene Capsules and public JSON/Markdown mission reports.
+- Reconstructs binding EMA analytically across seek/speed changes; recording end markers retain quiet session duration.
+- Added explicit HTTP Bearer-token environment selection; connection details are excluded from presets/capsules.
+- Hardened public recording/export redaction, stale-selection ownership and Replay read-only keyboard controls.
+- Validation: 349 passing tests, including actual curses, local HTTP/Git, record/replay/export and privacy checks; isolated wheel/CLI/Capsule smoke passed. No model calls.
+- Added Workbench documentation, verified asset examples and three actual Renderer screenshots. External site/device mapping still requires a selected endpoint/hardware.
+
 ## 0.9.0 — 2026-10-31
 
 - Added validated binding configurations with linear/log transforms, exact-time EMA, missing-signal policies and immutable provenance.

@@ -5,12 +5,16 @@ from collections import deque
 from dataclasses import dataclass, replace
 import gzip
 import json
+import math
 from pathlib import Path
 import queue
 import threading
+import uuid
 from typing import Tuple
 
 from .telemetry import DataEvent, TelemetryHub, utc_now
+from .playback import (Bookmark, PlaybackProjection, SPEEDS, automatic_bookmarks,
+                       arena_document, arena_from_document, presentation_document, failure_offsets)
 
 
 @dataclass(frozen=True)
@@ -76,6 +80,8 @@ class Recorder:
         self._closed, self._last_offset = False, 0
         self._checkpoint_interval, self._last_checkpoint = max(1.0, checkpoint_seconds), -float("inf")
         self._state = {}
+        self._bookmark_sequence = 0
+        self._bookmark_session = uuid.uuid4().hex[:12]
         self._thread = threading.Thread(target=self._write, name="devos-recorder", daemon=True)
         self._thread.start()
         # Startup verifies permissions before the UI advertises recording.
@@ -113,7 +119,55 @@ class Recorder:
             return value
 
         document["payload"] = clean(document["payload"])
+        if event.topic == "arena.snapshot":
+            source = document["payload"].get("snapshot", document["payload"])
+            public = arena_document(arena_from_document(source))
+            public["mode"] = source.get("mode") if source.get("mode") in ("demo", "watch", "relay", "mission", "replay") else "unknown"
+            document["payload"] = public
+        elif event.topic == "presentation.changed":
+            source = document["payload"]
+            if type(source.get("schema_version", 1)) is not int or source.get("schema_version", 1) != 1:
+                raise ValueError("Unsupported recorded presentation version")
+            public = presentation_document(source.get("parameters", source.get("preferences", {})),
+                                           source.get("visual_time", 0), source.get("protocol_time", 0),
+                                           source.get("paused", False))
+            # Omitted anchors retain their projected values during replay.
+            for key in ("visual_time", "protocol_time", "paused"):
+                if key not in source:
+                    public.pop(key)
+            document["payload"] = public
+        elif event.topic.startswith("arena.") or event.topic.startswith("agent.handoff."):
+            from .playback import _text
+            private = {"cwd", "path", "root", "directory", "file", "source_url", "endpoint", "device", "device_id",
+                       "session_id", "provider_session_id", "argv", "command"}
+
+            def public_value(value, key=""):
+                if key in ("prompt", "system_prompt", "full_prompt") and self.include_prompts:
+                    return value
+                if key in ("terminal_text", "transcript") and self.include_terminal:
+                    return value
+                if isinstance(value, dict):
+                    return {name: public_value(item, name.lower()) for name, item in value.items() if name.lower() not in private}
+                if isinstance(value, list):
+                    return [public_value(item) for item in value]
+                return _text(value, 16384) if isinstance(value, str) else value
+
+            document["payload"] = public_value(document["payload"])
         return document
+
+    def bookmark(self, label="Bookmark", offset_seconds=0., kind="manual"):
+        """Record a human marker only when this explicit method is invoked."""
+        from .playback import _text
+        if kind not in ("manual", "failure", "handoff", "surge") or not isinstance(label, str) or not label.strip():
+            raise ValueError("Bookmark needs a label and known kind")
+        with self._lock:
+            self._bookmark_sequence += 1
+            sequence = self._bookmark_sequence
+        stamp = utc_now()
+        event = DataEvent("bookmark-" + str(sequence), "recording.bookmark", "recorder", self._bookmark_session,
+                          sequence, "live", None, stamp,
+                          {"id": "bookmark-" + str(sequence), "label": _text(label, 160), "kind": kind})
+        return self.record(event, offset_seconds)
 
     def record(self, event, offset_seconds=0.0):
         if self._closed or self._error:
@@ -121,6 +175,8 @@ class Recorder:
         document = self._sanitize_event(event)
         if document is None:
             return True
+        if isinstance(offset_seconds, bool) or not isinstance(offset_seconds, (int, float)) or not math.isfinite(offset_seconds):
+            raise ValueError("Recording offset must be finite seconds")
         offset = max(self._last_offset, max(0, int(float(offset_seconds) * 1000)))
         self._last_offset = offset
         document["recorded_offset_ms"] = offset
@@ -253,6 +309,9 @@ class ReplayStatus:
     event_count: int
     seed: int
     error: str = ""
+    bookmarks: tuple = ()
+    arena_status: str = "NO_RECORDED_STATE"
+    source_screen: str = "cockpit"
 
 
 class Replay:
@@ -261,10 +320,13 @@ class Replay:
     def __init__(self, path, max_bytes=200 * 1024 * 1024, max_events=200000):
         self.path = Path(path).expanduser()
         self.manifest, self.events, self._offsets, self._checkpoints = {}, [], [], []
-        self.playhead, self.speed, self.playing, self._cursor = 0.0, 1.0, False, 0
-        total, seen, pending_path, event_offsets = 0, set(), self.path, {}
+        self.playhead, self._speed, self.playing, self._cursor = 0.0, 1.0, False, 0
+        total, seen, pending_path, event_offsets = 0, set(), self.path.resolve(), {}
+        recording_root = pending_path.parent
         while pending_path is not None:
             resolved = pending_path.resolve()
+            if not resolved.is_file() or resolved.parent != recording_root or seen and pending_path.is_symlink():
+                raise ValueError("Replay parts must be regular files in their recording directory")
             if resolved in seen or len(seen) >= 32:
                 raise ValueError("Invalid recording rotation chain")
             seen.add(resolved)
@@ -280,10 +342,16 @@ class Replay:
                         raise ValueError("Replay exceeds bounded input size")
                     if not raw.strip():
                         continue
-                    document = json.loads(raw)
+                    try:
+                        document = json.loads(raw)
+                    except (ValueError, UnicodeDecodeError, RecursionError):
+                        raise ValueError("Invalid bounded recording JSON")
+                    if not isinstance(document, dict):
+                        raise ValueError("Recording records must be JSON objects")
                     kind = document.get("record_type")
                     if kind == "manifest":
-                        if document.get("schema_version") != 1 or document.get("format") != "devos-event-log":
+                        if (type(document.get("schema_version")) is not int or document.get("schema_version") != 1 or
+                                document.get("format") != "devos-event-log"):
                             raise ValueError("Unsupported recording manifest")
                         if not self.manifest:
                             self.manifest = document
@@ -334,12 +402,21 @@ class Replay:
             self.manifest = {"schema_version": 1, "seed": 42, "parameters": {}}
         self.events, self._offsets = tuple(self.events), tuple(self._offsets)
         self.duration = self._offsets[-1] if self._offsets else 0.0
+        seed = self.manifest.get("seed", 42)
+        if type(seed) is not int or not -(2 ** 63) <= seed < 2 ** 63:
+            raise ValueError("Recording seed must be a bounded integer")
+        if not isinstance(self.manifest.get("parameters", {}), dict):
+            raise ValueError("Recording presentation parameters must be an object")
+        self._projection = PlaybackProjection(self.events, self._offsets, self.manifest.get("parameters", {}))
+        self._bookmarks = automatic_bookmarks(self.events, self._offsets)
+        self._failure_offsets = failure_offsets(self.events, self._offsets)
+        self._bookmark_sequence = 0
         self._state_events, self._hub, self._hub_cursor = (), None, 0
         self.seek(0.0)
 
     @staticmethod
     def _offset(value):
-        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 3153600000000:
             raise ValueError("Recording needs a nonnegative integer offset_ms")
         return value / 1000.0
 
@@ -349,8 +426,11 @@ class Replay:
         return replace(event, mode="replay", origin_mode=origin)
 
     def seek(self, seconds, _return_events=True):
+        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds):
+            raise ValueError("Replay seek must be finite seconds")
         self.playhead = min(self.duration, max(0.0, float(seconds)))
         self._cursor = bisect_right(self._offsets, self.playhead)
+        self._projection.seek(self.playhead)
         if self._hub is not None and self._cursor >= self._hub_cursor:
             for index in range(self._hub_cursor, self._cursor):
                 self._hub._accept(self.events[index], self._offsets[index])
@@ -388,6 +468,8 @@ class Replay:
     def update(self, dt):
         if not self.playing:
             return ()
+        if isinstance(dt, bool) or not isinstance(dt, (int, float)) or not math.isfinite(dt):
+            raise ValueError("Replay delta must be finite seconds")
         previous = self._cursor
         self.seek(self.playhead + max(0.0, float(dt)) * self.speed, _return_events=False)
         if self.playhead >= self.duration:
@@ -396,7 +478,66 @@ class Replay:
 
     def snapshot(self):
         return ReplayStatus(str(self.path), self.playhead, self.duration, self.playing,
-                            self.speed, len(self.events), int(self.manifest.get("seed", 42)))
+                            self.speed, len(self.events), int(self.manifest.get("seed", 42)), "",
+                            self.bookmarks, self.arena_snapshot().status, self.presentation_snapshot().source_screen)
+
+    @property
+    def speed(self):
+        return self._speed
+
+    @property
+    def event_offsets(self):
+        """Immutable recording-relative seconds, aligned with ``events``."""
+        return self._offsets
+
+    @speed.setter
+    def speed(self, value):
+        self.set_speed(value)
+
+    def set_speed(self, value):
+        if type(value) not in (int, float) or not math.isfinite(value) or value not in SPEEDS:
+            raise ValueError("Replay speed must be one of .25, .5, 1, 2, 4, 8")
+        self._speed = float(value)
+        return self._speed
+
+    def cycle_speed(self, direction=1):
+        if direction not in (-1, 1) or isinstance(direction, bool):
+            raise ValueError("Replay speed direction must be -1 or 1")
+        return self.set_speed(SPEEDS[(SPEEDS.index(self._speed) + direction) % len(SPEEDS)])
+
+    @property
+    def bookmarks(self):
+        return tuple(sorted(self._bookmarks, key=lambda item: (item.offset, item.id)))
+
+    def add_bookmark(self, label="Bookmark", kind="manual", offset=None):
+        from .playback import _text
+        offset = self.playhead if offset is None else offset
+        if (not isinstance(label, str) or not label.strip() or kind not in ("manual", "failure", "handoff", "surge") or
+                type(offset) not in (int, float) or not math.isfinite(offset) or not 0 <= offset <= self.duration):
+            raise ValueError("Invalid replay bookmark")
+        if len(self._bookmarks) >= 512:
+            raise ValueError("Replay bookmark limit reached")
+        existing = {item.id for item in self._bookmarks}
+        self._bookmark_sequence += 1
+        while "manual-" + str(self._bookmark_sequence) in existing:
+            self._bookmark_sequence += 1
+        marker = Bookmark("manual-" + str(self._bookmark_sequence), float(offset), _text(label, 160), kind)
+        self._bookmarks += (marker,)
+        return marker
+
+    def next_bookmark(self, kind=None):
+        if kind is not None and kind not in ("manual", "failure", "handoff", "surge"):
+            raise ValueError("Unknown replay bookmark kind")
+        marker = next((item for item in self.bookmarks if item.offset > self.playhead and (kind is None or item.kind == kind)), None)
+        if marker:
+            self.seek(marker.offset)
+        return marker
+
+    def arena_snapshot(self):
+        return self._projection.arena_snapshot()
+
+    def presentation_snapshot(self):
+        return self._projection.presentation_snapshot()
 
     def telemetry_snapshot(self):
         # The isolated in-memory store has no providers/commands. Sampling it
@@ -404,10 +545,11 @@ class Replay:
         return self._hub.snapshot()
 
     def next_failure(self):
-        for event, offset in zip(self.events[self._cursor:], self._offsets[self._cursor:]):
-            if event.payload.get("result") in ("failed", "error") or event.topic.endswith(".failed") or event.payload.get("exit_code", 0) not in (0, None):
-                self.seek(offset)
-                return offset
+        index = bisect_right(self._failure_offsets, self.playhead)
+        if index < len(self._failure_offsets):
+            offset = self._failure_offsets[index]
+            self.seek(offset)
+            return offset
         return None
 
     def close(self):
