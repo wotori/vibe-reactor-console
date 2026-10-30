@@ -86,6 +86,9 @@ def dispatch_key(session, runtime, key):
     if key == curses.KEY_RESIZE:
         return
     action = action_for_key(key)
+    if session.quit_confirm:
+        session.quit_key(key)
+        return
     if session.project_editor:
         session.project_key(key)
         return
@@ -154,49 +157,55 @@ def run(screen, args):
     deadline, previous_fps = start, session.options.fps
     try:
         while session.running:
-            now = time.monotonic()
-            if args.duration is not None and now - start >= args.duration:
-                break
-            dt, last = min(now - last, .2), now
-            if session.terminal_focused != raw_input:
-                raw_input = session.terminal_focused
-                if raw_input:
-                    curses.raw()
-                else:
-                    curses.noraw()
-                    curses.cbreak()
-            for _ in range(256):
-                key = screen.getch()
-                if key == -1:
+            try:
+                now = time.monotonic()
+                if args.duration is not None and now - start >= args.duration:
                     break
-                dispatch_key(session, with_services, key)
+                dt, last = min(now - last, .2), now
+                if session.terminal_focused != raw_input:
+                    raw_input = session.terminal_focused
+                    if raw_input:
+                        curses.raw()
+                    else:
+                        curses.noraw()
+                        curses.cbreak()
+                for _ in range(256):
+                    key = screen.getch()
+                    if key == -1:
+                        break
+                    dispatch_key(session, with_services, key)
+                    if not session.running:
+                        break
                 if not session.running:
                     break
-            if not session.running:
-                break
-            rectangles = terminal_rectangles(screen, session)
-            with_services.terminals.set_visible(tuple(slot for slot, rect in rectangles) if not session.stream_view else ())
-            for slot, rect in rectangles:
-                with_services.terminals.resize(max(2, rect.width - 4), max(1, rect.height - 4), slot)
-            session.update(dt)
-            with_services.update(dt)
-            render_started = time.perf_counter()
-            renderer.draw(session)
-            sample_render += (time.perf_counter() - render_started) * 1000
-            sample_frames += 1
-            session.frames += 1
-            if now - sample_start >= .5:
-                session.actual_fps = sample_frames / (now - sample_start)
-                session.render_ms = sample_render / sample_frames
-                sample_start, sample_frames, sample_render = now, 0, 0.0
-            if previous_fps != session.options.fps:
-                deadline, previous_fps = now, session.options.fps
-            interval = 1 / session.options.fps
-            deadline += interval
-            finished = time.monotonic()
-            if finished - deadline > interval:
-                deadline = finished
-            time.sleep(max(0., deadline - finished))
+                rectangles = terminal_rectangles(screen, session)
+                with_services.terminals.set_visible(tuple(slot for slot, rect in rectangles) if not session.stream_view else ())
+                for slot, rect in rectangles:
+                    with_services.terminals.resize(max(2, rect.width - 4), max(1, rect.height - 4), slot)
+                session.update(dt)
+                with_services.update(dt)
+                render_started = time.perf_counter()
+                renderer.draw(session)
+                sample_render += (time.perf_counter() - render_started) * 1000
+                sample_frames += 1
+                session.frames += 1
+                if now - sample_start >= .5:
+                    session.actual_fps = sample_frames / (now - sample_start)
+                    session.render_ms = sample_render / sample_frames
+                    sample_start, sample_frames, sample_render = now, 0, 0.0
+                if previous_fps != session.options.fps:
+                    deadline, previous_fps = now, session.options.fps
+                interval = 1 / session.options.fps
+                deadline += interval
+                finished = time.monotonic()
+                if finished - deadline > interval:
+                    deadline = finished
+                time.sleep(max(0., deadline - finished))
+            except KeyboardInterrupt:
+                if session.terminal_focused and not session.quit_confirm:
+                    with_services.terminals.send(b"\x03", session.terminal_slot)
+                else:
+                    session.request_quit()
     finally:
         with_services.close()
         if raw_input:

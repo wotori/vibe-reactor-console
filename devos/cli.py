@@ -83,7 +83,7 @@ def parser():
     result = DevosParser(
         prog="devos",
         description="DEV/OS: terminal cockpit, live signals and a bounded agent arena. Python 3.9+, no runtime packages.",
-        epilog="TAB: scenes/options | G: graphics | 1..7: screens | P: commands | F2/Ctrl+]: terminal | F3: source | ?: help | Q: quit")
+        epilog="TAB: scenes/options | G: graphics | 1..7: screens | P: commands | F2/Ctrl+]: terminal | F3: source | ?: help | Q: confirm exit")
     result.add_argument("--version", action="version", version="DEV/OS " + __version__)
     result.add_argument("--list-modes", action="store_true", help="list scenes without opening the terminal UI")
     result.add_argument("--list-presets", action="store_true", help="list safe preference presets without a terminal")

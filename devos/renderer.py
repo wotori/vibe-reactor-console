@@ -63,7 +63,9 @@ class Renderer:
         else:
             render_screen(self, session, rows, cols)
             self.footer(session, rows, cols)
-        if session.project_editor:
+        if session.quit_confirm:
+            self.quit_confirmation(session, rows, cols)
+        elif session.project_editor:
             self.project_editor(session, rows, cols)
         elif session.binding_editor:
             self.binding_editor(session, rows, cols)
@@ -176,6 +178,29 @@ class Renderer:
         p.put(p.height - 1, 0, session.project_error or note,
               "warn" if session.project_error else "accent")
 
+    def quit_confirmation(self, session, rows, cols):
+        if cols < 38 or rows < 9:
+            self.canvas.put(0, 0, "QUIT DEV/OS?", "warn", True)
+            self.canvas.put(1, 0, "[Exit] Stay" if session.quit_selected else "[Stay] Exit", "main", True)
+            self.canvas.put(2, 0, "Y/N; ENTER", "muted")
+            return
+        width, height = min(76, cols - 2), min(12, rows - 2)
+        rect = Rect((rows - height) // 2, (cols - width) // 2, height, width)
+        self.canvas.fill(rect)
+        p = self.canvas.panel(rect, "QUIT DEV/OS?", "CONFIRM EXIT")
+        text = "Exiting closes terminal sessions and stops workspace jobs."
+        lines = textwrap.wrap(text, max(1, p.width))
+        for row, line in enumerate(lines):
+            p.put(row, 0, line, "warn")
+        if p.height >= 8:
+            p.put(3, 0, "No jobs are stopped until you confirm.", "text")
+        row = p.height - 3
+        p.put(row, 1, "[ Stay ]", "main" if not session.quit_selected else "muted",
+              not session.quit_selected, not session.quit_selected)
+        p.put(row, 15, "[ Exit ]", "warn" if session.quit_selected else "muted",
+              session.quit_selected, session.quit_selected)
+        p.put(p.height - 1, 0, "Arrows/TAB select / ENTER accept / Y exit / N or ESC stay", "accent")
+
     def handoff_composer(self, session, rows, cols):
         rect = Rect(1, 1, max(3, rows - 3), max(5, cols - 3))
         self.canvas.fill(rect)
@@ -212,7 +237,7 @@ class Renderer:
             "Managed: explicit --mission + separate workspaces, finite exchanges.",
             "LIVE unavailable stays unavailable; the UI never invents a reading.",
             "Stream View hides personal panels. Recordings exclude pulse by default.",
-            "Q quit / ? help",
+            "Q / Ctrl+C: confirm exit (Stay by default) / ? help",
         )
         for row, line in enumerate(lines[:p.height]):
             p.put(row, 0, line, "main" if row < 2 else "text")

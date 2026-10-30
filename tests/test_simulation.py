@@ -119,4 +119,8 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(session.speed, 0.25)
         session.handle("tab")
         session.handle("quit")
+        self.assertTrue(session.running)
+        self.assertTrue(session.quit_confirm)
+        session.handle("right")
+        session.handle("accept")
         self.assertFalse(session.running)

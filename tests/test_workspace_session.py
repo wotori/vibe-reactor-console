@@ -194,6 +194,9 @@ class WorkspaceSessionTests(unittest.TestCase):
         self.assertFalse(session.terminal_focused)
         self.assertEqual(runtime.terminals.snapshot().status, "NOT STARTED / human-owned terminal")
         dispatch_key(session, runtime, ord("q"))
+        self.assertTrue(session.running)
+        self.assertTrue(session.quit_confirm)
+        dispatch_key(session, runtime, ord("y"))
         self.assertFalse(session.running)
 
     def test_palette_terminal_creates_a_child_and_reveals_it_from_a_zoomed_visual(self):

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.1 — 2026-10-31
+
+- Q, dashboard Ctrl+C and Esc outside menus now request exit confirmation with Stay selected by default; repeated Q never confirms.
+- Enter defaults to staying, N/Esc cancel, Y or selecting Exit and Enter confirm. Cancel preserves the previous screen, editor and live sessions.
+- Terminal-owned Q/Esc/Ctrl+C still go to the child; live terminals, tasks and managed workers remain running while confirmation is open.
+- Validation: 400 passing tests, including keyboard ownership, resize and actual PTY checks for SIGINT cancellation and a live shell surviving the dialog. Explicit `--duration` remains an unattended time limit.
+
 ## 0.11.0 — 2026-10-31
 
 - Added U / searchable Source folder selection and `--project-root` for arbitrary local projects, including UTF-8 paths.

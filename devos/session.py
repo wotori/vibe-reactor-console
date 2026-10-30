@@ -54,6 +54,7 @@ class Session:
         self.paused = paused
         self.options = Options(fps, consumer, background, theme or "auto", scope, auto_cycle)
         self.running = True
+        self.quit_confirm = self.quit_selected = False
         self.menu_kind = None
         self.menu_focus = "list"
         self.menu_index = next(i for i, item in enumerate(MODES) if item.id == mode)
@@ -127,7 +128,46 @@ class Session:
     @property
     def menu_open(self):
         return (self.menu_kind is not None or self.palette_open or self.help_open or self.composer_open
-                or self.inspector_kind is not None or self.binding_editor or self.project_editor)
+                or self.inspector_kind is not None or self.binding_editor or self.project_editor or self.quit_confirm)
+
+    def request_quit(self):
+        """Ask before closing any worker or terminal; Stay is always the default."""
+        if not self.quit_confirm:
+            self.quit_selected = False
+            self.quit_confirm = True
+
+    def quit_action(self, action):
+        if action in ("left", "up"):
+            self.quit_selected = False
+        elif action in ("right", "down"):
+            self.quit_selected = True
+        elif action == "tab":
+            self.quit_selected = not self.quit_selected
+        elif action == "escape":
+            self.quit_confirm = False
+            self.quit_selected = False
+        elif action == "accept":
+            if self.quit_selected:
+                self.running = False
+            self.quit_confirm = False
+            self.quit_selected = False
+
+    def quit_key(self, key):
+        from .terminal import curses
+        if key in (ord("y"), ord("Y")):
+            self.quit_selected = True
+            self.quit_action("accept")
+        elif key in (ord("n"), ord("N"), 27):
+            self.quit_action("escape")
+        elif key in (10, 13):
+            self.quit_action("accept")
+        elif key == 9:
+            self.quit_action("tab")
+        elif curses is not None:
+            action = {curses.KEY_LEFT: "left", curses.KEY_UP: "up", curses.KEY_RIGHT: "right",
+                      curses.KEY_DOWN: "down", curses.KEY_BTAB: "tab", curses.KEY_ENTER: "accept"}.get(key)
+            if action:
+                self.quit_action(action)
 
     @property
     def current_binding_config(self):
@@ -434,6 +474,9 @@ class Session:
         self.mode_id = mode_id
 
     def handle(self, action):
+        if self.quit_confirm:
+            self.quit_action(action)
+            return
         if action.startswith("screen:"):
             self.choose_screen(action.split(":", 1)[1])
             return
@@ -478,7 +521,7 @@ class Session:
             self.terminal_focused = False
             return
         if action == "quit":
-            self.running = False
+            self.request_quit()
             return
         if action == "help":
             self.help_open = True
@@ -603,7 +646,7 @@ class Session:
             if self.zoomed:
                 self.zoomed = False
             else:
-                self.running = False
+                self.request_quit()
         elif self.screen_id == "atlas" and action in ("up", "down"):
             self.handle("atlas-prev" if action == "up" else "atlas-next")
         elif self.screen_id == "atlas" and action == "accept":
