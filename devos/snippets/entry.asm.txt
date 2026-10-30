@@ -1,0 +1,54 @@
+; x86-64 higher-half entry / System V ABI
+bits 64
+default rel
+
+global _start
+extern kmain
+extern gdt_reload
+extern idt_init
+extern serial_init
+
+section .text
+align 16
+_start:
+    cli                         ; no IRQs before IDT
+    cld                         ; forward string ops
+    lea     rsp, [stack_top]
+    and     rsp, -16            ; ABI stack alignment
+    xor     rbp, rbp
+
+    push    rdi                 ; preserve boot info
+    sub     rsp, 8
+    call    gdt_reload
+    call    serial_init
+    call    idt_init
+
+    mov     ecx, 0xc0000080     ; IA32_EFER
+    rdmsr
+    or      eax, 1 << 11        ; enable NXE
+    wrmsr
+
+    mov     rax, cr0
+    and     rax, ~(1 << 2)      ; disable emulation
+    or      rax, 1 << 1         ; monitor coprocessor
+    mov     cr0, rax
+
+    mov     rax, cr4
+    or      rax, (1 << 9) | (1 << 10)
+    mov     cr4, rax            ; OSFXSR / OSXMMEXCPT
+
+    add     rsp, 8
+    pop     rdi
+    sti
+    call    kmain
+
+.halt:
+    cli
+    hlt
+    jmp     .halt
+
+section .bss
+align 4096
+stack_bottom:
+    resb 65536
+stack_top:

@@ -1,0 +1,50 @@
+; Cooperative context switch; callee-saved state
+bits 64
+default rel
+
+global context_switch
+global cpu_idle
+extern scheduler_pick_next
+
+section .text
+align 16
+
+; rdi = &old->rsp, rsi = new->rsp
+; The suspended stack owns its return address.
+context_switch:
+    pushfq
+    push    rbp
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+
+    mov     [rdi], rsp
+    mov     rsp, rsi
+
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    pop     rbp
+    popfq
+    ret
+
+align 64
+cpu_idle:
+    cli
+    call    scheduler_pick_next
+    test    rax, rax
+    jnz     .resume
+
+    ; STI interrupt shadow makes this pair safe.
+    sti
+    hlt
+    jmp     cpu_idle
+
+.resume:
+    mov     rdi, rax
+    sti
+    ret

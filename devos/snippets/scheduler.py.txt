@@ -1,0 +1,37 @@
+from __future__ import annotations
+import asyncio
+from dataclasses import dataclass
+from time import perf_counter
+
+@dataclass(frozen=True)
+class Task:
+    name: str
+    priority: int = 0
+    retries: int = 3
+
+class Scheduler:
+    """Keep the event loop moving."""
+
+    def __init__(self, workers: int = 8):
+        self.queue = asyncio.PriorityQueue()
+        self.workers = workers
+        self.completed = 0
+
+    async def dispatch(self, task: Task):
+        await self.queue.put((task.priority, task))
+
+    async def worker(self, worker_id: int):
+        while True:
+            priority, task = await self.queue.get()
+            started = perf_counter()
+            try:
+                await self.execute(task)
+                self.completed += 1
+            finally:
+                elapsed = perf_counter() - started
+                self.record(worker_id, elapsed)
+                self.queue.task_done()
+
+    async def run(self):
+        pool = [self.worker(i) for i in range(self.workers)]
+        await asyncio.gather(*pool)

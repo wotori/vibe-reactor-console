@@ -1,0 +1,33 @@
+  return v.items;
+}
+export function avatarReference(rendition: Rendition): string {
+  validateRendition(rendition);
+  return VERIFIED_AVATAR_PREFIX + JSON.stringify(rendition);
+}
+export function parseAvatarReference(value: string): Rendition | null {
+  if (!value.startsWith(VERIFIED_AVATAR_PREFIX)) return null;
+  if (value.length > 4096) throw new Error("Avatar reference is too large.");
+  const r = JSON.parse(value.slice(VERIFIED_AVATAR_PREFIX.length)) as Rendition;
+  validateRendition(r);
+  return r;
+}
+export async function downloadSpaceAvatar(
+  r: Rendition,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  validateRendition(r);
+  const bytes = await downloadVerifiedRendition(
+    { id: `sha256:${r.sha256}`, url: r.downloadUrl, ...r },
+    { signal, allowLocalhost: true },
+  );
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (
+    view.getUint32(0, true) !== 0x46546c67 ||
+    view.getUint32(4, true) !== 2 ||
+    view.getUint32(8, true) !== bytes.length
+  )
+    throw new Error("Invalid VRM container.");
+  return new Blob([bytes as Uint8Array<ArrayBuffer>], {
+    type: "model/gltf-binary",
+  });
+}

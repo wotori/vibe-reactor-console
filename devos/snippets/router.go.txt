@@ -1,0 +1,41 @@
+package mesh
+
+import (
+    "context"
+    "sync"
+    "time"
+)
+
+type Router struct {
+    mu       sync.RWMutex
+    peers    map[string]*Peer
+    incoming chan Message
+}
+
+func NewRouter(buffer int) *Router {
+    return &Router{
+        peers:    make(map[string]*Peer),
+        incoming: make(chan Message, buffer),
+    }
+}
+
+func (r *Router) Route(ctx context.Context) error {
+    ticker := time.NewTicker(250 * time.Millisecond)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ctx.Done():
+            return ctx.Err()
+        case msg := <-r.incoming:
+            r.mu.RLock()
+            peer, ok := r.peers[msg.Destination]
+            r.mu.RUnlock()
+            if ok {
+                peer.Deliver(ctx, msg)
+            }
+        case <-ticker.C:
+            r.rebalance()
+        }
+    }
+}

@@ -1,0 +1,48 @@
+/// Preserve the original handheld pilot's identity/content hash algorithm.
+/// Avatar slugs remain compatible with `passport::protected_slug`.
+pub fn asset_slug(kind: AssetKind, asset_id: &str, sha256: &str) -> String {
+    match kind {
+        AssetKind::Weapon => {
+            let hash = crate::sha256_hex(format!("{asset_id}:{sha256}").as_bytes());
+            format!("ekza-{}", &hash[..32])
+        }
+        AssetKind::Avatar => format!(
+            "ekza-{}",
+            crate::sha256_hex(format!("{asset_id}\n{sha256}").as_bytes())
+        ),
+    }
+}
+
+pub fn validate_item(
+    item: &StoreAsset,
+    kind: AssetKind,
+    selector: &SupportSelector,
+) -> Result<(), &'static str> {
+    if item.asset_kind != kind || !item.free {
+        return Err("Asset kind or free access does not match this store");
+    }
+    validate_asset_id(kind, &item.asset_id)?;
+    validate_project_support(&item.support, selector)?;
+    let rendition = &item.support.rendition;
+    if rendition.size_bytes > kind.max_bytes()
+        || rendition.format != "glb"
+        || item.slug != asset_slug(kind, &item.asset_id, &rendition.sha256)
+    {
+        return Err("Asset slug, GLB format or size does not match its approved rendition");
+    }
+    Ok(())
+}
+
+/// Select explicitly free assets approved for precisely this game/profile.
+/// Missing/unknown access, identities, revisions or approvals never qualify.
+pub fn templates(
+    assets: &[CatalogAsset],
+    kind: AssetKind,
+    selector: &SupportSelector,
+) -> Vec<StoreAsset> {
+    let mut seen = std::collections::HashSet::new();
+    let mut result = Vec::new();
+    for asset in assets {
+        if asset.asset_kind != kind || asset.access != "free" {
+            continue;
+        }

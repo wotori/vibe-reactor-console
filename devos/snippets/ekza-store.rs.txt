@@ -1,0 +1,54 @@
+        /// "has a humanoid skin and the clips my animation graph needs"; it
+        /// runs before anything is placed under `avatars/`.
+        pub fn install(
+            &self,
+            item: &StoreAvatar,
+            validator: impl FnOnce(&[u8]) -> Result<(), String>,
+        ) -> Result<PathBuf, String> {
+            validate_item(item, &self.selector)?;
+            let destination = self.model_path(&item.slug);
+            let rendition = &item.protected.support.rendition;
+            if let Ok(bytes) = read_exact_size(&destination, rendition.size_bytes)
+                && check(&item.protected, &self.selector, &bytes).is_ok()
+            {
+                validator(&bytes)?;
+                return Ok(destination);
+            }
+            let cached = self
+                .cache
+                .fetch_model(&AvatarRendition {
+                    id: rendition.id.clone(),
+                    format: rendition.format.clone(),
+                    platform: item.protected.support.platform.clone(),
+                    profile: item.protected.support.profile.clone(),
+                    url: rendition.url.clone(),
+                    sha256: Some(rendition.sha256.clone()),
+                    size_bytes: Some(rendition.size_bytes),
+                    media_type: None,
+                })
+                .map_err(|error| error.to_string())?;
+            let bytes = read_exact_size(&cached.path, rendition.size_bytes)?;
+            check(&item.protected, &self.selector, &bytes)?;
+            validator(&bytes)?;
+            atomic_write(&destination, &bytes).map_err(|error| error.to_string())?;
+            Ok(destination)
+        }
+    }
+
+    fn check(
+        protected: &ProtectedAvatar,
+        selector: &SupportSelector,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        protected
+            .validate_bytes_for(selector, bytes, &sha256_hex(bytes))
+            .map_err(str::to_owned)
+    }
+
+    fn read_exact_size(path: &Path, size_bytes: u64) -> Result<Vec<u8>, String> {
+        let file = fs::File::open(path).map_err(|_| "Avatar is not installed".to_string())?;
+        let actual = file
+            .metadata()
+            .map_err(|_| "Avatar metadata unavailable".to_string())?
+            .len();
+        if actual != size_bytes {

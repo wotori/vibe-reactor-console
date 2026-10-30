@@ -1,0 +1,38 @@
+import { Signal, computed } from "@core/reactive";
+import type { Packet, Transport } from "./types";
+
+type ConnectionState = "idle" | "ready" | "syncing";
+
+export class EventStream implements Transport {
+  private socket: WebSocket | null = null;
+  private pending = new Map<string, Packet>();
+  readonly state = new Signal<ConnectionState>("idle");
+  readonly connected = computed(() => this.state() === "ready");
+
+  async connect(endpoint: string): Promise<void> {
+    this.state.set("syncing");
+    this.socket = new WebSocket(endpoint);
+
+    this.socket.onopen = () => {
+      this.state.set("ready");
+      this.flush();
+    };
+
+    this.socket.onmessage = ({ data }) => {
+      const packet: Packet = JSON.parse(data);
+      this.pending.delete(packet.id);
+      this.emit(packet.channel, packet.payload);
+    };
+  }
+
+  send(packet: Packet): void {
+    this.pending.set(packet.id, packet);
+    if (this.connected()) this.flush();
+  }
+
+  private flush(): void {
+    for (const packet of this.pending.values()) {
+      this.socket?.send(JSON.stringify(packet));
+    }
+  }
+}

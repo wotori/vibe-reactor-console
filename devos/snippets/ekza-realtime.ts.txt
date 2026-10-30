@@ -1,0 +1,56 @@
+import type { RemoteClients, Vector3Tuple } from "../world/types";
+
+export const REALTIME_EVENTS = {
+  existingClients: "existing clients",
+  newUser: "new user",
+  deleteClient: "delete",
+  presenceSuperseded: "presence superseded",
+  presenceReady: "presence ready",
+  move: "move",
+  setUserData: "set user data",
+  chatMessage: "chat message",
+  joinSpace: "join-space",
+  leaveSpace: "leave-space",
+  requestRoomProgram: "request room program",
+  roomProgramUpdate: "room program update",
+  roomProgramState: "room program state",
+  authNonce: "auth nonce",
+  auth: "auth",
+  authResult: "auth result",
+  roomAccess: "room access",
+  roomError: "room error",
+} as const;
+
+export type PublicRealtimeUserData = {
+  nickname: string;
+  avatar: string;
+  avatarHeightScale?: number;
+};
+
+export type SetUserDataPayload = PublicRealtimeUserData & {
+  /** Private random browser token used by the server to collapse duplicate tabs. */
+  presenceToken?: string;
+};
+
+export type JoinSpacePayload =
+  | string
+  | { roomId: string; presenceToken?: string; claimId?: number };
+
+export type LeaveSpacePayload =
+  | string
+  | { roomId: string; claimId?: number };
+
+export type MovePayload = {
+  position: Vector3Tuple;
+  rotation: number;
+  seq?: number;
+  sentAt?: number;
+};
+
+export type MoveServerPayload = MovePayload &
+  Partial<PublicRealtimeUserData> & {
+    id: string;
+    clientSeq?: number;
+    serverSeq?: number;
+    serverTime?: number;
+  };

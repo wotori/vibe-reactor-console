@@ -1,0 +1,45 @@
+    /// A response from before logout or a new pairing must never restore identity.
+    /// Returns true only when the current result changed the account/library.
+    fn finish_refresh(
+        &mut self,
+        generation: u64,
+        result: Result<Option<AccountSession>, AccountError>,
+    ) -> bool {
+        if self.generation != generation {
+            return false;
+        }
+        self.worker = false;
+        match result {
+            Ok(session) => {
+                self.session = session;
+                self.error = None;
+                true
+            }
+            Err(AccountError::Unauthorized) => {
+                self.session = None;
+                if let Some(path) = &self.path {
+                    let _ = std::fs::remove_file(path);
+                }
+                self.error = Some(Notice::Key("account.error.expired"));
+                true
+            }
+            Err(AccountError::InvalidCredential) => {
+                // Preserve the file for its own configured server/project.
+                self.error = Some(Notice::Key("account.error.other_server"));
+                false
+            }
+            Err(_) => {
+                // SDK diagnostics are not needed in a public-facing menu.
+                self.error = Some(Notice::Key("account.error.unavailable_retained"));
+                false
+            }
+        }
+    }
+}
+
+static STATE: Mutex<State> = Mutex::new(State::new());
+const REFRESH: Duration = Duration::from_secs(15);
+
+pub fn initialize(path: PathBuf) {
+    STATE.lock().unwrap().path = Some(path);
+}

@@ -1,0 +1,41 @@
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use crate::graph::{Frame, RenderGraph};
+
+pub struct Pipeline {
+    graph: Arc<RenderGraph>,
+    frame_index: u64,
+    quality: Quality,
+}
+
+impl Pipeline {
+    pub fn new(graph: RenderGraph) -> Self {
+        Self {
+            graph: Arc::new(graph),
+            frame_index: 0,
+            quality: Quality::Ultra,
+        }
+    }
+
+    pub async fn render(&mut self) -> Result<Frame> {
+        let (tx, mut rx) = mpsc::channel(64);
+        let passes = self.graph.topological_sort()?;
+
+        for pass in passes {
+            let sender = tx.clone();
+            tokio::spawn(async move {
+                let output = pass.execute().await?;
+                sender.send(output).await?;
+                Ok::<(), RenderError>(())
+            });
+        }
+
+        drop(tx);
+        let mut frame = Frame::default();
+        while let Some(layer) = rx.recv().await {
+            frame.composite(layer);
+        }
+        self.frame_index += 1;
+        Ok(frame)
+    }
+}

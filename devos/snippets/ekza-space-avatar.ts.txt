@@ -1,0 +1,33 @@
+} from "@ekza/stellar-sdk/catalog";
+/** Every viewer verifies the exact bytes of server-approved network avatars. */
+export function useVerifiedAvatar(path: string): string {
+  const [resolved, setResolved] = useState({ path: "", url: "" });
+  const verified = path.startsWith(VERIFIED_AVATAR_PREFIX);
+  useEffect(() => {
+    if (!verified) return;
+    const controller = new AbortController();
+    let url = "";
+    const timeout = setTimeout(() => controller.abort(), 60_000);
+    void (async () => {
+      try {
+        const rendition = parseAvatarReference(path);
+        if (!rendition) return;
+        const blob = await downloadSpaceAvatar(rendition, controller.signal);
+        if (!controller.signal.aborted) {
+          url = URL.createObjectURL(blob);
+          setResolved({ path, url });
+        }
+      } catch {
+        if (!controller.signal.aborted) setResolved({ path, url: "" });
+      } finally {
+        clearTimeout(timeout);
+      }
+    })();
+    return () => {
+      controller.abort();
+      clearTimeout(timeout);
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [path, verified]);
+  return verified ? (resolved.path === path ? resolved.url : "") : path;
+}

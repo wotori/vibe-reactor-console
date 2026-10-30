@@ -1,0 +1,51 @@
+#include <math.h>
+#include <stdint.h>
+
+typedef struct { float v[4]; } vec4;
+typedef struct { float x, y, z; } vec3;
+typedef struct { float x, y; } vec2;
+
+static vec4 rotate_plane(vec4 p, int a,
+                          int b, float theta)
+{
+    float c = cosf(theta), s = sinf(theta);
+    float x = p.v[a], y = p.v[b];
+    p.v[a] = x * c - y * s;
+    p.v[b] = x * s + y * c;
+    return p;
+}
+
+static vec3 project_w(vec4 p)
+{
+    float perspective = 3.2f / (4.0f - p.v[3]);
+    return (vec3){p.v[0] * perspective,
+                  p.v[1] * perspective,
+                  p.v[2] * perspective};
+}
+
+void render_tesseract(float time)
+{
+    vec2 screen[16];
+    for (uint32_t i = 0; i < 16; ++i) {
+        vec4 p;
+        for (int axis = 0; axis < 4; ++axis)
+            p.v[axis] = (i & (1u << axis))
+                      ? 1.0f : -1.0f;
+
+        p = rotate_plane(p, 0, 3, time * 0.37f);
+        p = rotate_plane(p, 2, 3, time * 0.23f);
+        p = rotate_plane(p, 0, 1, time * 0.17f);
+        vec3 world = project_w(p);
+        float z = 4.5f / (6.0f - world.z);
+        screen[i] = (vec2){world.x * z,
+                            world.y * z};
+    }
+
+    for (uint32_t i = 0; i < 16; ++i) {
+        for (int axis = 0; axis < 4; ++axis) {
+            uint32_t j = i ^ (1u << axis);
+            if (i < j)
+                raster_line(screen[i], screen[j]);
+        }
+    }
+}

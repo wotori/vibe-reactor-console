@@ -1,0 +1,48 @@
+/// so it can only be minted once. The metadata URI is derived from
+/// `Config::base_uri` — minters cannot inject their own.
+pub fn mint_space(ctx: Context<MintSpace>, space_id: u32) -> Result<()> {
+    let config = &ctx.accounts.config;
+    let payer = &ctx.accounts.payer;
+
+    require!(!config.paused, ErrorCode::MintingPaused);
+    require!(config.has_collection(), ErrorCode::CollectionNotCreated);
+    require!(
+        config.minted_spaces < config.total_spaces,
+        ErrorCode::AllSpacesMinted
+    );
+    require!(
+        space_id >= 1 && space_id <= config.total_spaces,
+        ErrorCode::InvalidSpaceId
+    );
+
+    // Per-wallet limit.
+    let minter = &mut ctx.accounts.minter_record;
+    if minter.wallet == Pubkey::default() {
+        minter.wallet = payer.key();
+        minter.bump = ctx.bumps.minter_record;
+    }
+    if config.max_per_wallet > 0 {
+        require!(
+            minter.minted < config.max_per_wallet,
+            ErrorCode::MintLimitReached
+        );
+    }
+    minter.minted = minter
+        .minted
+        .checked_add(1)
+        .ok_or(ErrorCode::MintLimitReached)?;
+
+    // Transfer price from payer to treasury.
+    let price = config.price_lamports;
+    if price > 0 {
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: payer.to_account_info(),
+                    to: ctx.accounts.treasury.to_account_info(),
+                },
+            ),
+            price,
+        )?;
+    }

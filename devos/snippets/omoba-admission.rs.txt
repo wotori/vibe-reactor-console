@@ -1,0 +1,50 @@
+            _ => return Admission::Free,
+        };
+        let Some(slug) = avatar.as_deref() else {
+            return Admission::Free;
+        };
+        // Gameplay normalizes surrounding whitespace before assigning a model.
+        // The gate must inspect the same slug to prevent a padded paid bypass.
+        let slug = slug.trim();
+        // A free community avatar needs no ticket, but only this server's own read
+        // of the registry can say an avatar is free.
+        if passport_ticket.is_none() && ekza_bevy_sdk::passport::is_protected_slug(slug) {
+            let lookup = self.free.lock().unwrap().lookup(slug, Instant::now());
+            match lookup {
+                FreeLookup::Known(item) => {
+                    return if register_free(&item) {
+                        Admission::Free
+                    } else {
+                        Admission::Denied
+                    };
+                }
+                FreeLookup::Unknown => {}
+                FreeLookup::NeedsRead => {
+                    if self.pending.contains(&addr) {
+                        return Admission::Pending;
+                    }
+                    if self.pending.len() >= MAX_PENDING {
+                        return Admission::Denied;
+                    }
+                    self.pending.insert(addr);
+                    let (free, fetch, registry) =
+                        (self.free.clone(), self.fetch_free, self.registry.clone());
+                    let (slug, packet, sender) =
+                        (slug.to_owned(), packet.clone(), self.sender.clone());
+                    std::thread::spawn(move || {
+                        let result = fetch(&registry);
+                        let item = free.lock().unwrap().apply(result, &slug, Instant::now());
+                        let allowed = item.is_some_and(|item| register_free(&item));
+                        let _ = sender.send(CompletedAdmission {
+                            addr,
+                            packet,
+                            allowed,
+                            weapon_only: false,
+                            resume_session: None,
+                            skip_avatar: false,
+                        });
+                    });
+                    return Admission::Pending;
+                }
+            }
+        }
