@@ -20,7 +20,7 @@ class CliTests(unittest.TestCase):
                                   capture_output=True, text=True, timeout=5)
 
     def test_help_version_and_modes_need_no_terminal(self):
-        for option, expected in (("--help", "TAB:"), ("--version", "DEV/OS " + __version__),
+        for option, expected in (("--help", "TAB:"), ("--version", "Vibe Reactor Console " + __version__),
                                  ("--list-modes", "BARE METAL")):
             with self.subTest(option=option):
                 result = self.invoke(option)

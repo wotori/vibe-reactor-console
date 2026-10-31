@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.13.1 — 2026-10-31
+
+- Named the public project Vibe Reactor Console (`vibe-reactor-console`) and added English repository and package descriptions.
+- Added an English README with portable setup instructions, controls and actual screenshots; preserved the Russian guide as README.ru.md.
+- Added the `vibe-reactor-console` installed command and `dev_console.py` checkout launcher. The existing `devos` command, `python -m devos`, `dev_show.py`, configuration paths and internal DEV/OS identifiers remain compatible.
+- Validation: 501 passing tests. Built and installed the staged wheel outside the checkout; both installed commands, both checkout launchers, module entry point, all three games, reactor and 18 snippets passed without new runtime dependencies or settings writes. English and Russian README links and CLI examples were checked.
+
 ## 0.13.0 — 2026-10-31
 
 - Added screen 8 / Arcade with three playable local games: Snake, Falling Blocks and the original side-scrolling Byte Runner.

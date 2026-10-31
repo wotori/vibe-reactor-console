@@ -1,3 +1,3 @@
-"""DEV/OS: an ASCII development workstation with optional terminals and signals."""
+"""Vibe Reactor Console: an ASCII workstation, with the compatible devos API."""
 
-__version__ = "0.13.0"
+__version__ = "0.13.1"

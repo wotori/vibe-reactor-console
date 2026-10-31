@@ -1,580 +1,295 @@
-# DEV/OS
+# Vibe Reactor Console
 
-Консольная рабочая станция для фана и работы: **восемь экранов**, три игры, 12 ASCII-визуалов,
-настоящие исходники Ekza, два независимых терминала, живые сигналы и конечные
-сценарии Codex + Claude. Нативный чёрный фон сохраняется.
+**The core spins. The code ships.**
 
-![Visual Lab](docs/screenshots/workspace-lab.png)
+A terminal cockpit that started as a fake coding simulator and got carried away:
+ASCII reactors, real project source, two interactive terminals, bounded agent
+missions, live data adapters, replay — and an arcade for the build breaks.
 
-Python **3.9+**, macOS/Linux, стандартная библиотека. Для настоящих терминалов
-нужен установленный `tmux`; для managed-миссий — ваши установленные CLI и доступ
-к моделям. Дополнительные Python-зависимости не нужны.
+[English](README.md) · [Русский](README.ru.md)
 
-Обычный запуск показывает **DEMO** и текст исходников. Реальные команды,
-HTTP-подключения, запись и managed-миссии запускаются отдельными явными
-действиями/аргументами. DEMO, LIVE и REPLAY различаются в интерфейсе;
-неизвестные значения отображаются как `--`.
+[![Plasma Reactor: a shaded core, orbiting particles and trails](docs/screenshots/reactor.gif)](docs/screenshots/reactor.png)
 
-[Что реализовано](docs/implementation.md) · [История изменений](CHANGELOG.md) · [Сигналы и примеры](docs/data-sources.md) ·
-[Agent Arena](docs/agent-arena.md) · [Спецификация](docs/evolution/README.md)
+**Python 3.9+ · macOS / Linux · No third-party Python runtime dependencies**
 
-Рабочая часть спецификации: [bindings, выбранный source/diff, Replay Arena и экспорт](docs/workbench.md).
+Use it as a visual toy, a coding workspace, or a display for your own signals.
+The default session is **DEMO**. Real commands, data connections, recordings and
+managed agent missions start through explicit actions or launch arguments.
+The interface distinguishes **DEMO**, **LIVE** and **REPLAY**; missing data stays `--`.
 
-## Запуск
-
-Из папки проекта:
+## Start here
 
 ```bash
-python3 -m devos
+git clone https://github.com/wotori/vibe-reactor-console.git
+cd vibe-reactor-console
+python3 dev_console.py
 ```
 
-Или из любой папки:
+Run in an interactive terminal. A window of **120×36** or larger exposes the
+extra panels; the layout adapts down to **48×16**. Your terminal's background is
+preserved by default, including black and transparency settings.
+
+Try the reactor, your own source code, or a game:
 
 ```bash
-python3 /Users/wotori/git/dev-os/dev_show.py
+python3 dev_console.py --animation reactor --background black
+python3 dev_console.py --project-root /path/to/project --animation reactor
+python3 dev_console.py --screen arcade
 ```
 
-Разверните окно терминала. При **120×36** и больше появляются все дополнительные
-панели; на небольшом экране интерфейс автоматически упрощается. По умолчанию фон
-наследуется от терминала, графика и рамки состоят из ASCII-символов.
+The reactor is available through **G → PLASMA REACTOR → Enter**.
+Press **Y** to make the visual fullscreen; **Esc** restores the layout.
 
-## Восемь экранов и быстрые композиции
+Optionally install the command in a virtual environment:
 
 ```bash
-python3 -m devos --preset showcase --background black
-python3 -m devos --preset duet
-python3 -m devos --list-presets
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -e .
+vibe-reactor-console --animation reactor
 ```
 
-| Клавиша | Экран | Содержание |
+`python3 -m devos`, `devos` and `dev_show.py` remain compatible entry points.
+The internal Python package and existing settings directory are still named `devos`.
+
+## Eight screens, one slightly excessive console
+
+| Key | Screen | What it does |
 | --- | --- | --- |
-| `1` | Cockpit | Код Ekza или настоящий терминал, графика, протокол, scope |
-| `2` | Visual Lab | Визуал, источник параметров, качество и возраст сигнала |
-| `3` | Arena | Конечный demo, два CLI в Watch или managed-обмен |
-| `4` | Site | Карта страниц и агрегатная посещаемость с точными окнами |
-| `5` | Body | BPM/RR и художественная пульсация; это не ЭКГ |
-| `6` | Atlas | Протокол ассетов Ekza; `D` — настоящее дерево Git |
-| `7` | Replay | Запись событий с playhead, seek и поиском ошибки |
-| `8` | Arcade | Змейка, тетрис и платформер Byte Runner |
+| **1** | Cockpit | Source or a real terminal beside graphics, events and math |
+| **2** | Visual Lab | Bind a signal to a visual parameter; inspect its age and quality |
+| **3** | Agent Arena | Demo, two interactive CLIs, or explicit bounded agent missions |
+| **4** | Site Observatory | Aggregate audience metrics and a page constellation |
+| **5** | Body Signal | BPM/RR data and an artistic pulse; not an ECG |
+| **6** | Ekza Atlas | Asset protocol examples, or a real Git tree with source and diff |
+| **7** | Replay Studio | Recorded events, bookmarks, seeking and Arena reconstruction |
+| **8** | Arcade | Snake, falling blocks and an original ASCII platformer |
 
-**P** или **/** открывает поиск команд. **?** показывает управление.
-**O / Shift+O** выбирает панель, **Z** разворачивает её, **Esc** возвращает
-раскладку. **V** выбирает привязку online/pulse/tests/queue; **I** — интенсивность.
-**G** открывает все 12 анимаций. **E** продвигает demo-события, **A** включает
-автоматическую смену графики.
+**P** or **/** opens command search. **?** opens help.
+**O / Shift+O** selects a panel; **Z** zooms it.
+Screens share visual preferences, and switching screens keeps child processes alive.
 
-**L** открывает форму привязки: источник, диапазоны, linear/log, EMA и поведение
-при потере сигнала. Стрелки меняют значения, **S** сохраняет, **R** сбрасывает.
-Сглаживается графика; исходное число, возраст и качество остаются точными.
-Через **P → Spectator** включается Event Director с ограниченными эффектами
-на ошибки, handoff и всплески — без смены владельца клавиатуры.
+## Graphics with a terminal-sized ego
 
-Настройки сохраняются **автоматически** в `$XDG_CONFIG_HOME/devos/settings.json`
-(обычно `~/.config/devos/settings.json`): выбранная анимация, фон, палитра,
-скорость, FPS, scope, bindings, экран и папка SOURCE. Запись откладывается на
-0,75 секунды после изменения; подтверждённый выход сохраняет последний выбор.
-**S** сохраняет сразу. Порядок: настройки → пресет → явные
-аргументы CLI. `--no-config` отключает чтение и запись настроек на этот запуск; `--preset FILE`
-импортирует JSON. Пресет хранит композицию, seed и параметры, без команд,
-адресов источников, токенов или автоматически запускаемых задач.
-Чтобы вернуться к выбранному Reactor, запускайте `python3 -m devos`:
-повторный `--preset showcase` заново применит графику и автосмену этого пресета.
+Choose from **12 visuals** using **G**:
 
-## SOURCE из своего проекта
+- Plasma Reactor, Gravity Well, Torus Knot and Twin Core.
+- Packet Garden, Voxel Tide and Asset Orrery.
+- T-pose Avatar, Solid Cube, Asset Sphere and a mathematically projected 4D Tesseract.
+- Ekza Asset Flow: identity → revision → rendition → approval → verification → consumer.
 
-Нажмите **U** или **P → Source / choose project folder**, вставьте путь и нажмите
-Enter. **Ctrl+U** очищает поле; пустой путь возвращает исходники текущей сцены.
-Поддерживаются пробелы, кириллица и другие UTF-8 имена. Папку можно задать сразу:
+Source scenes and graphics are independent. **Tab** chooses a scene: Ekza,
+Bare Metal (C and x86-64 assembly), Dev Lab, or Hyperspace. In either picker,
+**← / →** switches between the content list and shared options.
+
+**Math Scope** has eight animated functions: harmonic interference, a moving
+parabola, Lissajous curves, Fourier synthesis, a travelling wave packet, a polar
+rose, an Archimedean spiral and epicycles. **F** changes the function;
+**W** toggles the panel; **X** makes it fullscreen.
+
+[![Animated mathematical functions](docs/screenshots/math-scope.gif)](docs/screenshots/math-scope.png)
 
 ```bash
-python3 -m devos --project-root /path/to/project --animation reactor
+python3 dev_console.py --mode bare-metal --animation reactor
+python3 dev_console.py --animation sphere --fps 120 --auto-cycle 15
+python3 dev_console.py --scope-mode parabola --scope-auto-cycle 15
 ```
 
-SOURCE печатает случайный фрагмент настоящего файла с меткой **PROJECT**, путём
-и реальными номерами строк. **N** выбирает следующий файл, **R** перечитывает
-текущий. После завершения печати и демонстрационной сборки файлы сменяются сами.
-Графика и код выбираются независимо; команды из показанного кода не выполняются.
+**A** cycles the main visual automatically. Math has its own auto-cycle setting.
+**T** changes the palette; **B** switches between the native terminal background
+and forced black. In 256-color terminals, forced black uses color 16 (`#000000`).
+The frame cap is **60 FPS** by default, adjustable from 10 to 120; actual throughput
+depends on your terminal and window size.
 
-Индексирование и чтение идут в отдельном worker с ограничениями размера и
-глубины. Пропускаются скрытые, бинарные, известные секретные файлы, symlink и
-каталоги сборки/зависимостей. Если код недоступен, видна причина и используются
-снимки сцены. Фильтр имён не обнаруживает секреты внутри обычного исходника.
-Локальная папка запоминается отдельно от переносимых presets, recordings и capsules;
-cwd терминалов не меняется. `--bundled` временно выбирает встроенные снимки,
-сохраняя предпочтение папки. Replay не сканирует проект и не перезаписывает настройки.
+## Source from your own project
 
-Через **P → Stream View** можно скрыть текст терминалов, пути, личные сигналы
-и сообщения агентов. Это режим показа интерфейса, отдельный от правил записи.
+Press **U**, enter a project folder and confirm. **N** chooses another random
+source file; **R** rereads the current file. The SOURCE panel types real excerpts
+with file paths and real line numbers. Displaying code never executes it.
 
-## Arcade: змейка, тетрис и Byte Runner
+Scanning and reading run in a bounded background worker. Hidden files, binary
+files, symlinks, common secret filenames, and build/dependency directories are
+skipped. Filename filtering cannot detect secrets inside an ordinary source file;
+choose the folder with your intended audience in mind.
 
-![Игровой хаб Arcade](docs/screenshots/arcade.png)
+Without a selected project, scenes show bundled snippets, or matching local
+Ekza files if available. Provenance is visible: **PROJECT**, **LOCAL** or
+**SNAPSHOT**. The built-in Ekza protocol animation explains avatar/asset contracts;
+its example IDs, revisions and hashes are **DEMO**, not results from a live catalog.
+See [source provenance](docs/ekza-sources.md).
 
-Нажмите **8**: стрелки или **J/K/Tab** выбирают игру, **Enter** открывает её,
-ещё один **Enter** начинает раунд. Игры также находятся через **P → Arcade**.
+Preferences save automatically to `$XDG_CONFIG_HOME/devos/settings.json`
+(normally `~/.config/devos/settings.json`): visual, background, palette, speed,
+FPS, math, bindings, selected screen and project folder. **S** saves immediately.
+Use `--no-config` for a session that neither reads nor writes preferences.
+Precedence is **saved settings → preset → explicit CLI arguments**.
 
-| Игра | Управление и цель |
+```bash
+python3 dev_console.py --list-presets
+python3 dev_console.py --preset showcase
+```
+
+A preset deliberately reapplies its composition. To resume your saved reactor
+selection next time, launch without `--preset showcase`.
+
+## Real terminals and two agents
+
+Install **tmux** separately to enable embedded terminals. The rest of the app
+works without it. You can run a shell, Codex, Claude or another installed CLI:
+
+```bash
+python3 dev_console.py --terminal --animation reactor
+python3 dev_console.py --command codex --cwd /path/to/project
+python3 dev_console.py --screen arena --agents watch \
+  --command codex --right-command claude
+```
+
+![A real Codex terminal alongside the reactor](docs/screenshots/terminal-codex.png)
+
+- **F2 / Ctrl+]** transfers keyboard ownership between the dashboard and terminal.
+- **F3** switches source/terminal display without terminating the child program.
+- **F4** focuses the other terminal slot. Both appear side by side at **160×36** or larger.
+- In a focused terminal, ordinary keys go to its program; **Ctrl+C** interrupts it.
+
+The embedded terminals use a private temporary tmux server. Existing tmux sessions
+and configuration are left alone. Terminal snapshots update independently of the
+visual frame cap. Mouse input, terminal image protocols and OSC clipboard/links
+are not forwarded; some emoji widths may differ from a native terminal.
+
+**Watch** mode is human-driven: it does not automatically exchange prompts.
+**Relay** and **Mission** modes support explicit public handoffs and finite task
+graphs with handoff/time limits, separate working folders and local check results.
+They require installed compatible CLIs, your own model access and an explicit
+`--mission`. **!** stops a managed mission from the dashboard.
+See [Agent Arena](docs/agent-arena.md) for scenarios and limits.
+
+For a model-free preview:
+
+```bash
+python3 dev_console.py --preset duet
+```
+
+## Bring your own signals
+
+Generic adapters accept aggregate JSON files, an HTTP(S) endpoint, JSONL files
+or a FIFO. Heart-rate input uses a separate local JSON bridge. These adapters do
+not install analytics on your website or connect a wearable by themselves.
+
+```bash
+# Fixed fixtures that demonstrate the input contract, not real measurements.
+python3 dev_console.py --screen site --source-file examples/site.json
+python3 dev_console.py --screen body --binding pulse --heart-file examples/heart.json
+
+# Your own aggregate endpoint; missing live data stays unavailable.
+python3 dev_console.py --screen site --data-mode live \
+  --source-url https://your-site.example/api/metrics
+
+# Real repository data; D toggles the Git view in Atlas.
+python3 dev_console.py --screen atlas --git-root /path/to/project
+```
+
+Bindings can drive energy, particle count and other visual parameters from
+online/pulse/tests/queue signals. **V** cycles a binding; **L** edits its range,
+linear/log mapping, smoothing and missing-data behavior. Smoothing affects the
+picture; the displayed measurement, age and quality remain explicit.
+
+A local check is configured with `--task 'your command'` and only starts through
+**P → Task / run configured check**. Its actual exit code, revision and output
+are available in the result inspector.
+
+See [input schemas, freshness and examples](docs/data-sources.md).
+
+## Record, replay and share a composition
+
+```bash
+python3 dev_console.py --record /tmp/reactor-session.jsonl
+python3 dev_console.py --replay /tmp/reactor-session.jsonl
+```
+
+Replay is isolated from live actions: recorded events never launch commands.
+**Space** plays/pauses, **[ / ]** seeks, **M** adds a bookmark during recording,
+and **, / .** changes replay speed. The command palette exposes Arena
+reconstruction, public mission reports and scene capsule export. Capsules contain
+portable preferences, not commands, credentials or local project paths.
+
+Recordings exclude personal pulse, terminal text and prompts by default;
+`--record-pulse` explicitly includes pulse data. **Stream View** hides terminal
+text, paths, personal signals and agent messages for display; recording has its
+own separate rules. See [the workbench guide](docs/workbench.md).
+
+## Build breaks deserve an arcade
+
+![Arcade lobby](docs/screenshots/arcade.png)
+
+Press **8**, choose with **arrows / J / K / Tab**, press **Enter** to open a game,
+and **Enter** again to start. Search **/ → Arcade** also works.
+
+| Game | Controls and features |
 | --- | --- |
-| Snake | Стрелки/WASD; еда увеличивает змейку и скорость. Пробел/P — пауза |
-| Falling Blocks | ←/→ или A/D — двигать, ↑/W — повернуть, ↓/S — опустить, пробел — сбросить. Семь фигур, ghost, следующая фигура, очистка рядов |
-| Byte Runner | ←/→ или A/D — движение, ↑/W/пробел — прыжок. Платформы, монеты, противники, чекпоинты, пружины и финишный флаг |
+| **Snake** | Arrows/WASD; food, growth, collisions and increasing speed |
+| **Falling Blocks** | ←/→ move, ↑ rotates, ↓ soft drop, Space hard drop; seven-piece bag, ghost, next preview and line clears |
+| **Byte Runner** | ←/→ move; ↑/W/Space jumps; coins, enemies, springs, checkpoints and a finish flag |
 
-Во всех играх **P** ставит паузу, **Enter** продолжает, **R** начинает заново.
-**Esc** возвращает в игровой хаб; повторный Esc — в Cockpit. **/** открывает
-поиск команд, **1–8** переключают экраны. **Q** открывает подтверждение выхода.
-**!** сохраняет аварийную остановку managed-миссии. Внутри игры её клавиши
-принадлежат игре, а в дочернем терминале — его программе.
+**P** pauses, **Enter** resumes, **R** restarts. **Esc** returns to the game lobby;
+another Esc returns to Cockpit. **/** opens command search while playing.
+Each game keeps its round in memory when switching screens, but does not restore
+it after application restart or include it in Replay. Hidden games and menus
+pause the game clock; terminals and work tasks continue independently.
+Byte Runner is an original ASCII platformer with its own Byte Valley level.
 
-Состояние каждой игры остаётся в памяти при переключении. Меню, невидимый экран,
-fullscreen и окно меньше 48×16 останавливают игровой таймер. Пауза основных
-визуалов не блокирует явно начатую игру. Терминалы и рабочие задачи продолжают
-работать независимо; F2/Ctrl+] возвращают к терминалу.
-
-Платформер — самостоятельный ASCII-мир Byte Valley. Можно прыгать на противников,
-собирать монеты, активировать чекпоинты и пройти весь уровень с тремя жизнями.
-В низком окне игровое поле сжимается по вертикали, сохраняя все строки.
-Предпочтения DEV/OS сохраняются как обычно; игровые раунды и счёт после
-перезапуска приложения не восстанавливаются и не входят в Replay.
-
-Скриншоты: [Snake](docs/screenshots/arcade-snake.png),
-[Falling Blocks](docs/screenshots/arcade-blocks.png),
+Screenshots: [Snake](docs/screenshots/arcade-snake.png) ·
+[Falling Blocks](docs/screenshots/arcade-blocks.png) ·
 [Byte Runner](docs/screenshots/arcade-runner.png).
 
-```bash
-python3 -m devos --screen arcade
-```
+## Everyday keys
 
-## Два терминала и дуэт агентов
+These apply when the dashboard owns the keyboard. Games have their own controls.
 
-```bash
-# Два настоящих интерактивных CLI; prompts пишет человек.
-python3 -m devos --screen arena --agents watch --command codex --right-command claude
-
-# Готовая зрелищная демонстрация без вызовов моделей.
-python3 -m devos --preset duet
-```
-
-**F2 / Ctrl+]** переключает клавиатуру между DEV/OS и выбранным терминалом.
-**F4** фокусирует другой слот. На узком экране виден выбранный терминал;
-при 160×36 и больше видны оба. Смена экрана сохраняет процессы.
-
-Relay передаёт завершённые публичные ответы через редактируемое окно **H**.
-Mission выполняет ограниченный сценарий в отдельных папках. Нужны явный
-`--mission`, рабочие папки и совместимые CLI; правила инструментов, лимиты и
-примеры приведены в [Agent Arena](docs/agent-arena.md).
-**!** останавливает managed-миссию с панели управления.
-
-![Arena DEMO](docs/screenshots/workspace-arena.png)
-
-## Данные, проверки и replay
-
-```bash
-# Контракт внешнего источника (пример содержит фиксированные числа).
-python3 -m devos --screen site --source-file examples/site.json
-python3 -m devos --screen body --binding pulse --heart-file examples/heart.json
-python3 -m devos --screen atlas --git-root .
-
-# Команда только настраивается. Запуск: P → Task / run configured check.
-python3 -m devos --task 'python3 -m unittest discover -s tests'
-
-python3 -m devos --record /tmp/devos-session.jsonl
-python3 -m devos --replay /tmp/devos-session.jsonl
-```
-
-В Atlas нажмите **D**, чтобы увидеть Git. Результат задачи доступен через
-**P → Task / inspect last result**: настоящий exit code, revision и вывод.
-
-В Atlas стрелки выбирают файл или узел, **Enter** открывает исходник/diff,
-**H** готовит контекст для следующего редактируемого handoff в Arena.
-`--asset-manifest JSON` подключает локальный каталог ассетов. Проверка SHA
-касается прочитанных байтов; решение consumer не симулируется как выполненное.
-
-Replay сохраняет изменения композиции и публичные состояния Arena. **M** ставит
-закладку, **, / .** меняют скорость, **}** переходит к следующей закладке.
-**P → Replay / toggle Arena reconstruction** показывает архив карточек,
-handoff и проверок. **P → Scene / export capsule** сохраняет переносимую
-композицию; импорт — `--preset FILE.capsule.json`. **P → Arena / export public
-mission report** сохраняет JSON/Markdown. Папку задаёт `--export-dir DIR`.
-
-Запись исключает пульс, терминальный текст и prompts по умолчанию. Личные
-измерения включаются отдельно через `--record-pulse`. Replay не запускает
-команды из событий; **пробел** — play/pause, **[ / ]** — seek, поиск ошибки в P.
-
-Отдельно собрать кандидат из результатов Split, сохранив исходные папки:
-
-```bash
-python3 -m devos --integrate /tmp/mission/base /tmp/mission/codex /tmp/mission/claude /tmp/candidate
-```
-
-В новой папке остаются совместимые изменения и `.devos/integration-report.json`.
-При конфликте сохраняется base и обе версии; exit code — 2. Это исходный
-кандидат без автоматического слияния: запустите его проверки отдельно.
-Файлы свыше 1 MiB и credential/build-каталоги в этот bounded snapshot не входят.
-
-HTTP, FIFO, JSON-контракт, TTL и восстановление описаны в
-[документации источников](docs/data-sources.md). Для статистики вашего сайта и
-пульса вашего устройства нужно явно подключить их endpoint/bridge;
-автоматического подключения к аккаунтам или BLE нет.
-
-## Настоящий терминал и Codex
-
-**F2** открывает оболочку вместо `SOURCE` и передаёт ей клавиатуру. Введите
-`codex` и нажмите Enter — его интерфейс появится в этой панели, а графика справа
-продолжит работать. Codex должен быть установлен и доступен в `PATH`.
-На Mac для функциональной клавиши может понадобиться **Fn+F2**.
-
-- **F2** или **Ctrl+]** переключают ввод между терминалом и панелью управления.
-- При фокусе в терминале `Tab`, стрелки, `Q` и остальные буквы получает дочерняя
-  программа; **Ctrl+C** прерывает её, сохраняя DEV/OS.
-- Вернувшись к управлению, нажмите **G** для смены графики или **Tab** для сцены.
-- **F3** переключает отображение между терминалом и исходниками. Оболочка и
-  запущенные в ней программы продолжают работать в фоне.
-- После завершения дочерней программы **F2** запускает её заново.
-- Выход из DEV/OS завершает его встроенный терминал. Для выхода нажмите
-  **Ctrl+]**, затем **Q** и подтвердите действие. По умолчанию выбран **Stay**:
-  **Enter**, **N** или **Esc** возвращают к работе. **Y** либо выбор **Exit**
-  стрелкой и **Enter** завершают приложение. Повторное **Q** не подтверждает выход.
-  Пока диалог открыт, терминалы и рабочие процессы продолжают работать.
-  **Ctrl+C** на пульте тоже открывает подтверждение; внутри терминала он прерывает
-  дочернюю программу, как обычно.
-
-Сразу открыть оболочку или Codex:
-
-```bash
-python3 -m devos --terminal --animation reactor --fps 120
-python3 -m devos --command codex --cwd /Users/wotori/git/dev-os --animation reactor
-```
-
-![Codex в настоящем терминале рядом с реактором](docs/screenshots/terminal-codex.png)
-
-Без `--cwd` используется папка, из которой запущен DEV/OS. `--command`
-разбирается на аргументы без подстановок оболочки; для конвейера можно явно
-запустить `--command "sh -lc 'ваша команда'"`. Настройки и авторизацию Codex
-DEV/OS не меняет.
-
-Используется отдельный временный сервер `tmux`: существующие сессии и
-`~/.tmux.conf` не затрагиваются. tmux обрабатывает настоящий PTY, перемещения
-курсора, прокрутку, альтернативный экран и размер окна. Снимки терминала
-обновляются до 30 раз в секунду в отдельном потоке; графика сохраняет свой лимит
-FPS. Цвета текста передаются в curses, фон сохраняется родным; инвертированные
-выделения отображаются подчёркиванием. Мышь, графические протоколы терминалов и
-OSC-ссылки/clipboard не передаются. Ширина составных emoji может отличаться от
-нативного терминала. Для Codex и обычной оболочки проверено клавиатурное управление.
-
-Без tmux симулятор работает как раньше; попытка открыть оболочку покажет
-сообщение о недостающей программе. Никакие пакеты автоматически не устанавливаются.
-
-## Фон
-
-Программа сохраняет родной фон терминала, включая абсолютный чёрный и настройки
-прозрачности. Цветовые палитры меняют только текст и графику. В меню выбранный
-режим обозначается маркером и подчёркиванием без цветной подложки.
-
-```bash
-# Сохранить фон терминала — это поведение по умолчанию.
-python3 -m devos --background terminal
-
-# Явно задать чёрный фон внутри приложения.
-python3 -m devos --background black
-```
-
-Клавиша **B** переключает эти два варианта, сохраняя выбор при смене сцен и палитр.
-В 256-цветном режиме принудительный чёрный использует цвет 16 (`#000000`)
-вместо зависящего от темы терминала цвета 0. В базовом цветовом режиме используется
-обычный чёрный; если терминал не поддерживает наследование фона, он тоже служит
-резервным вариантом.
-
-## Сцены, анимации и общие настройки
-
-**Tab** открывает выбор сцены с кодом, **G** — выбор анимации. В левой колонке
-выбирается сцена или графика, в правой находятся общие настройки.
-**← / →** переключают колонку, **↑ / ↓** или **J / K** выбирают строку,
-**Enter** применяет выбор или меняет значение опции. **Esc** закрывает меню.
-При открытом меню всё стоит на паузе. В узком окне показывается активная колонка.
-
-Автосмена, синусоида, FPS, потребитель протокола, фон, палитра и скорость общие
-для всех сцен. Выбранная через G анимация также сохраняется при смене сцены.
-Печать кода и состояние его сборки при выборе графики не сбрасываются.
-
-![Меню анимаций и общих настроек](docs/screenshots/picker.png)
-
-| Режим | Что на экране |
+| Key | Action |
 | --- | --- |
-| **EKZA SPACE** — по умолчанию | Настоящие фрагменты Rust и TypeScript; общий протокол аватаров и ассетов. По умолчанию вращается персонаж в T-позе, рядом объясняется жизненный цикл ассета. |
-| **BARE METAL** | C и x86-64 NASM: MMU, таблицы страниц, NVMe, переключение контекста. Тессеракт, регистры CPU, опкоды, дамп памяти и сборка ELF64. Палитра раскалённого металла. |
-| **DEV LAB** | Python, Rust, TypeScript и Go. Прежний набор кода, вращающийся куб, графики и зелёные тесты. |
-| **HYPERSPACE** | Геометрия на C, шейдеры GLSL и Rust. 4D-тессеракт, осциллограмма и конвейер проекции. |
+| **1–8** | Switch screen |
+| **Tab / G** | Scene picker / visual picker |
+| **P / /** | Command search |
+| **?** | Help |
+| **Space** | Pause/resume visuals |
+| **+ / −** | Speed: 0.25×–8× |
+| **T / B / A** | Palette / background / visual auto-cycle |
+| **F / W / X / Y** | Next math function / math panel / fullscreen math / fullscreen visual |
+| **U / N / R** | Project folder / next source / reread source |
+| **O / Shift+O / Z** | Next panel / previous panel / zoom |
+| **F2 / Ctrl+] / F3 / F4** | Terminal focus / focus / source display / other terminal |
+| **Q / Ctrl+C** | Open exit confirmation |
 
-Через **G** доступны двенадцать независимых визуализаций:
+Exit confirmation defaults to **Stay**. **Enter / N / Esc** returns to work;
+**Y**, or selecting **Exit** and pressing Enter, closes the application and its
+embedded terminals. Repeated Q does not confirm. Fullscreen exits with the same
+key, **Esc** or **Z**. An explicit `--duration` exits on its timer without a dialog.
+On some Macs, use **Fn** with function keys.
 
-![Процедурные персонаж, куб и сфера](docs/screenshots/visuals.png)
-
-| Анимация | Содержание |
-| --- | --- |
-| **T-POSE AVATAR** | Процедурный персонаж с головой, корпусом, руками и ногами; вращение, освещение, проверка глубины |
-| **SOLID CUBE** | Обычный жёсткий куб с затенёнными гранями |
-| **ASSET SPHERE** | Затенённая сфера с вращающимся экватором и меридианами |
-| **EKZA ASSET FLOW** | Пакет проходит по стадиям Identity → Revision → Rendition → Approval → Verify → Consumer |
-| **4D TESSERACT** | Перспективная проекция вращающегося четырёхмерного куба |
-| **PLASMA REACTOR** | Объёмное плазменное ядро, наклонённые 3D-орбиты и светящиеся частицы со шлейфами |
-| **GRAVITY WELL** | Тёмный горизонт, аккреционный диск и светящиеся дуги |
-| **TORUS KNOT** | Затенённая трубка трёхлистного узла с бегущими трассерами |
-| **PACKET GARDEN** | Ограниченное дерево событий с детерминированными ветвями |
-| **TWIN CORE** | Два ядра, очередь спутников и мост передачи сообщений |
-| **VOXEL TIDE** | Перспективный рельеф из проволочных столбиков |
-| **ASSET ORRERY** | Механическое созвездие ассетов и ревизий |
-
-Куб, сфера и персонаж строятся математически, без загрузки моделей или 3D-пакетов.
-Треугольники растеризуются в ASCII с освещением и буфером глубины.
-**A** переключает автоматическую смену графики: выкл. / 8 / 15 / 30 секунд.
-Ручной выбор анимации обнуляет таймер; пауза и открытое меню его останавливают.
-Нижняя панель **MATH SCOPE** показывает восемь математических анимаций:
-
-| Режим | Что движется |
-| --- | --- |
-| Harmonics | Несколько синусоид, биения амплитуды и яркий бегущий маркер |
-| Parabola | Вершина и кривизна параболы, точка на кривой |
-| Lissajous | Фигуры Лиссажу с движущейся точкой и затухающим следом |
-| Fourier | Сложение нечётных гармоник в приближение прямоугольной волны |
-| Wave packet | Движущийся волновой пакет с гауссовой огибающей |
-| Rose | Полярная роза с вращающимся трассером |
-| Spiral | Архимедова спираль |
-| Epicycles | Вращающиеся векторы гармоник и их результирующая |
-
-[![Восемь анимаций Math Scope](docs/screenshots/math-scope.gif)](docs/screenshots/math-scope.png)
-
-**F** переключает функции, **W** скрывает/показывает панель.
-**X** разворачивает математику на весь терминал; **Y** — основную анимацию
-(реактор, куб, сферу и остальные). Повторная клавиша, **Esc** или **Z** возвращают
-предыдущий вид. SOURCE и остальные панели скрываются; терминалы продолжают
-работать в фоне. В полноэкранной математике работает **F**, в основной графике —
-**G** для выбора анимации. Пауза и автосмена продолжают работать.
-Те же действия доступны через **P → Math scope / fullscreen** и
-**P → Visual / fullscreen**. Ввод X/Y в дочернем терминале получает его программа;
-в окне подтверждения выхода Y по-прежнему подтверждает выход.
-В поиске **P** можно ввести `parabola`, `fourier` или другое название.
-Автосмена функций включается через **P → Math scope / auto-cycle** либо в
-**Tab → правая колонка → Scope auto**: выкл. / 8 / 15 / 30 секунд.
-Она независима от основной 3D-анимации; пауза и открытые меню останавливают таймер.
-Выбор функции и интервал сохраняются автоматически. Это математические рисунки,
-а не измеренные сигналы оборудования. Чёрный и родной фон терминала сохраняются.
-При ширине окна меньше 80 символов нижняя панель скрывается, но полноэкранный
-режим доступен от 48×16.
-
-```bash
-python3 -m devos --animation avatar --fps 60
-python3 -m devos --animation sphere --fps 120 --auto-cycle 15
-python3 -m devos --animation reactor --fps 120
-python3 -m devos --animation cube --no-scope
-python3 -m devos --scope-mode parabola --scope-auto-cycle 15
-```
-
-[![Плазменный реактор: ядро, орбиты и частицы](docs/screenshots/reactor.gif)](docs/screenshots/reactor.png)
-
-У реактора вращаются орбиты и движутся частицы; затенённое ядро придаёт сцене
-объём. Его можно выбрать через **G** в любой сцене, в том числе с C и ассемблером.
-Реактор участвует в автоматической смене анимаций и использует общую палитру,
-сохраняя фон терминала.
-
-В шапке показываются измеренные FPS, целевой лимит и среднее время отрисовки.
-Достижимая частота зависит от терминала и размера окна; `--fps` задаёт лимит.
-Локальная проверка в псевдотерминале 144×44 на Python 3.9: аватар — 60.0 FPS,
-сфера — 59.8 FPS при лимите 60 и 120.0 FPS при лимите 120; отрисовка сферы
-занимала около 4.4 мс. Реактор при лимите 120 достиг 120.0 FPS,
-средняя отрисовка — около 4.6 мс. Цикл кадров компенсирует опоздания системного таймера.
-
-Тессеракт — настоящая математическая проекция: 16 вершин, 32 ребра, вращения
-в плоскостях XW, ZW и XY, перспективные преобразования 4D → 3D → 2D.
-Начальный вид — куб внутри куба. Две противоположные кубические ячейки и восемь
-соединений по W различаются цветом; легенда находится под графикой.
-Вращение замедляется около таких читаемых видов. Буфер глубины оставляет на
-пересечениях ближнее ребро, дальние рёбра приглушены. Графика занимает большую
-часть своей панели и подстраивается под её размер без обрезки вершин.
-
-## Анимированное объяснение протокола
-
-Протокол описывается как общий контракт Ekza, а потребители задаются отдельно.
-Каждая стадия длится 3.5 секунды и показывает свой смысл:
-
-1. **Identity:** постоянный `ekza:avatar:<uuid>` или `ekza:weapon:<uuid>`.
-2. **Revision:** неизменяемая ревизия исходника и отдельная публикация.
-3. **Rendition:** точные байты под платформу и профиль.
-4. **Approval:** независимое одобрение версии потребителем.
-5. **Verify:** проверка размера, SHA-256 и профиля в SDK.
-6. **Consumer:** приложение само решает допуск, каждый участник проверяет свой файл.
-
-Параметр **Consumer** в правой колонке или клавиша **C** переключает примеры:
-`all`, `space`, `mirror`, `omoba`. В режиме `all` чередуются аватары Space,
-Mirror и OMOBA и пример оружия. Space использует `universal / vrm-humanoid-v1`,
-Mirror — `ios / arkit-body-v1`, OMOBA — `desktop / humanoid-glb-v1` и
-`handheld-glb-v1`. Для Space и Mirror не изображается несуществующая поддержка
-оружия: пример оружия использует потребителя с соответствующим профилем.
-
-```bash
-python3 -m devos --animation protocol --consumer all
-python3 -m devos --animation avatar --consumer mirror
-```
-
-Демонстрационные ID/ревизии/хэши помечены `DEMO`. Это объяснение контракта,
-а не обращение к реальному каталогу или сообщение о результате сетевой проверки.
-Исходники в левой панели по-прежнему могут быть настоящими, с пометкой `LOCAL`.
-
-## Код из настоящих репозиториев
-
-При обычном запуске первый режим ищет соседнюю папку `ekza` и читает выбранные
-фрагменты из пяти репозиториев: `ekza-bevy-sdk`, `ekza-stellar-sdk`, `omoba-bevy`,
-`core` и `solana-ekza-space`. На экране видны путь файла, настоящие номера строк,
-диапазон фрагмента, его SHA-256 и пометка **LOCAL**. При каждом новом выборе
-фрагмента файл читается заново; `R` перечитывает текущий, `N` выбирает следующий.
-Само изменение исходника не перезапускает печать автоматически.
-
-```bash
-python3 -m devos --ekza-root /Users/wotori/git/ekza
-```
-
-Если локального файла или нужной функции нет, включается встроенный **SNAPSHOT** —
-выдержка из той же реальной репы. Можно принудительно показывать снимки:
-
-```bash
-python3 -m devos --bundled
-```
-
-Читаются только восемь явно заданных файлов, без рекурсивного обхода. Перечень
-фрагментов, диапазоны снимков и источники архитектуры: [docs/ekza-sources.md](docs/ekza-sources.md).
-Логи сборки и проверки остаются симуляцией: чтение исходников не запускает игры,
-сетевые запросы, сборщики или инструкции из этих файлов.
-
-## Управление
-
-Эти сочетания управляют DEV/OS, когда клавиатура не передана дочернему терминалу.
-**F2**, **F3** и **Ctrl+]** доступны в обоих режимах ввода.
-
-| Клавиша | Действие |
-| --- | --- |
-| `Tab` | Открыть меню режимов / следующий пункт |
-| `G` | Открыть меню анимаций / следующий пункт |
-| `←` / `→` | Выбирать левую колонку или общие настройки |
-| `↑` / `↓`, `K` / `J`, `Shift+Tab` | Выбирать режим в меню |
-| `Enter` | Выбрать сцену/анимацию или изменить опцию |
-| `Esc` | Закрыть меню/zoom; вне них — запросить подтверждение выхода |
-| `Пробел` | Пауза / продолжить |
-| `+` / `-` | Скорость от 0.25× до 8× |
-| `T` | Следующая цветовая палитра |
-| `B` | Родной фон терминала / принудительный чёрный |
-| `A` | Автосмена анимаций: выкл. / 8 / 15 / 30 секунд |
-| `W` | Показать/скрыть Math Scope |
-| `F` | Следующая математическая функция в Math Scope |
-| `X`, `Y` | Математика / основная анимация на весь экран; повторная клавиша или Esc — обратно |
-| `C` | Следующий потребитель протокола |
-| `U` | Выбрать папку проекта для SOURCE |
-| `N` | Следующий случайный файл проекта или исходник текущего режима |
-| `R` | Перечитать текущий исходник и начать его печать заново |
-| `F2`, `Ctrl+]` | Открыть терминал / переключить фокус ввода |
-| `F3` | Показать исходники / терминал, сохраняя дочернюю программу |
-| `F4` | Переключить ввод на другой терминал |
-| `1`–`8`, `P`, `?` | Экраны, поиск команд и справка; 8 — Arcade |
-| `O` / `Shift+O`, `Z` | Панель вперёд/назад, zoom |
-| `S`, `V`, `I`, `D`, `H`, `!` | Настройки, binding, интенсивность, Atlas, handoff, Stop |
-| `Q`, `Ctrl+C` на пульте | Подтверждение выхода; Stay выбран по умолчанию |
-
-```bash
-python3 -m devos --list-modes
-python3 -m devos --mode ekza --speed 1.5
-python3 -m devos --mode bare-metal --speed 1.5
-python3 -m devos --mode hyperspace --theme matrix
-python3 -m devos --mode lab --fps 20
-python3 -m devos --duration 30 --seed 42
-```
-
-Палитры: `ember`, `neon`, `matrix`, `ice`, `amber`.
-`--theme` и `T` выбирают общую палитру. Значение `AUTO` в правой колонке
-возвращает начальную палитру каждой сцены.
-`--duration` считает реальное время, включая паузы. По умолчанию симуляция работает
-до подтверждённого выхода пользователя. Явный `--duration` завершает сеанс
-по таймеру без диалога. Запускать нужно в интерактивном терминале.
-
-При желании можно установить команду `devos` в своё виртуальное окружение:
-
-```bash
-python3 -m pip install -e .
-devos --mode bare-metal
-```
-
-## Архитектура
-
-```text
-devos/
-  cli.py           аргументы, проверка окружения, восстановление терминала
-  app.py           единственный владелец ввода и цикл кадров
-  runtime.py       жизненный цикл сервисов, явные действия и очистка workers
-  screen_registry.py  описания восьми экранов и видимые rect для UI/PTY
-  screen_views.py  чистая отрисовка рабочих экранов
-  commands.py      каталог и поиск команд
-  presets.py       безопасные пресеты, валидация и атомарное сохранение
-  settings.py      локальная папка, автосохранение с debounce и восстановление
-  project_sources.py  ограниченное фоновое сканирование и случайные фрагменты
-  math_scope.py    чистый реестр и анимация восьми математических функций
-  games/           реестр игр, immutable frames и отдельные движки Snake/Blocks/Runner
-  arcade_view.py   чистая адаптивная отрисовка хаба и игровых полей
-  telemetry.py     неизменяемые события, источники, bounded queues и TTL
-  repository.py    настоящее дерево/status/diff Git
-  task_runner.py   явные проверки, exit code, timeout и отмена
-  recordings.py    JSONL/gzip, checkpoints, seek и изолированный replay
-  terminals.py     независимые слоты PTY и фокус
-  agents.py        capability discovery, bounded coordinator и артефакты
-  session.py       две колонки меню, общие опции, автосмена, состояние сцен
-  domain.py        неизменяемые описания режимов, исходников и логов
-  modes.py         каталог режимов и загрузка текстовых ресурсов
-  ekza.py          контекст Ekza/OMOBA и явный список исходников
-  protocol.py      общий жизненный цикл, профили потребителей, демо-состояние
-  sources.py       чтение локальных фрагментов, provenance и снимки
-  simulation.py    печать кода, стадии сборки, логи и телеметрия
-  machine.py       синтетические регистры, память и поток инструкций
-  graphics.py      чистая математика куба, тессеракта и осциллограммы
-  surfaces.py      процедурные сетки, свет, ASCII-растеризатор треугольников
-  reactor.py       плазменное ядро, 3D-орбиты и шлейфы частиц
-  effects.py       ещё шесть чистых ASCII-миров с числовыми параметрами
-  visuals.py       каталог анимаций, движение пакета протокола, синусоида
-  syntax.py        подсветка языков, NASM-регистров и инструкций
-  layout.py        расчёт панелей под размер терминала
-  renderer.py      панели интерфейса и меню выбора режима
-  terminal.py      curses-адаптер, цвета и обрезка текста по границам
-  shell.py         приватный tmux/PTY, ввод, снимки терминала и фоновые обновления
-  snippets/        исходники-декорации, хранящиеся как .txt
-tests/             unittest: состояние, геометрия, отрисовка и настоящий PTY
-```
-
-Симуляция не зависит от curses. Провайдер исходников передаётся ей отдельно;
-рендерер только читает готовое состояние.
-Новому режиму достаточно добавить `Mode` в `modes.py` и исходники в `snippets/`;
-панели и управление общие. Симуляция не требует runtime-пакетов;
-для дополнительного встроенного терминала используется внешняя команда `tmux`.
-
-## Проверка
+## Development and deeper documentation
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
 
-Тесты проверяют переключения и сохранение состояния, паузу, циклы сборок,
-математику 4D и 3D, глубину пересечений, общие опции, автосмену, стадии протокола,
-профили потребителей, сохранение фона при смене палитр и сцен,
-границы панелей, подсветку C/NASM, чтение реальных файлов,
-перечитывание, fallback на снимки и работу в псевдотерминале:
-Tab/G, обе колонки, стрелки, Enter, R, изменение размера, выход и Ctrl+C.
-При наличии tmux также проверяются выполнение команд, UTF-8, рабочая папка,
-изменение размера дочернего PTY, альтернативный экран, цвета, переключение фокуса,
-передача Ctrl+C и удаление собственного сервера. PTY-тесты предназначены
-для macOS/Linux.
+Tests cover pure simulation, geometry, rendering bounds, persistence, source
+workers, data freshness, game engines, replay and real terminal behavior when
+tmux is available. Agent tests use local fake processes, not paid model calls.
+Windows without curses is unsupported. Terminal processes, managed coordinator
+state and game rounds are not restored after restart.
 
-Настройки сохраняются автоматически и через S; события — явной записью. Интерактивные PTY
-и состояние managed coordinator между перезапусками не восстанавливаются.
-Windows без curses не поддерживается. Тесты агентов используют локальные fake
-JSONL-процессы и не вызывают платные модели.
+The runtime separates scene state, pure rendering, bounded worker snapshots and
+explicit actions. The `devos/games/` registry holds independent game engines;
+`screen_registry.py` defines screens and their shared UI/terminal layout contract.
+Detailed documentation is currently mostly in Russian:
 
-Чистый рендер семи экранов проверен при 144×44 и 240×60: максимум 3,67 и
-5,56 мс соответственно на текущем Mac. Замер не включает terminal I/O и не
-означает измеренный FPS на любом терминале. Лимит кадров — 60 по умолчанию.
+- [Implementation status](docs/implementation.md) and [changelog](CHANGELOG.md).
+- [Workbench, bindings and replay](docs/workbench.md).
+- [Data adapters and schemas](docs/data-sources.md).
+- [Agent Arena](docs/agent-arena.md).
+- [Ekza source provenance](docs/ekza-sources.md).
+- [Evolution specification](docs/evolution/README.md).
+- [Full Russian README](README.ru.md).
 
-Правила для следующих агентов: [AGENTS.md](AGENTS.md) и
-[devos-workflow](.agents/skills/devos-workflow/SKILL.md).
+Repository rules for contributors and coding agents:
+[AGENTS.md](AGENTS.md) and [development workflow](.agents/skills/devos-workflow/SKILL.md).

@@ -82,10 +82,10 @@ def environment_name(value):
 
 def parser():
     result = DevosParser(
-        prog="devos",
-        description="DEV/OS: terminal cockpit, live signals and a bounded agent arena. Python 3.9+, no runtime packages.",
+        prog="vibe-reactor-console",
+        description="Vibe Reactor Console: terminal cockpit, live signals, a bounded agent arena and ASCII arcade. Python 3.9+, no runtime packages.",
         epilog="TAB: scenes/options | G: graphics | 1..8: screens / 8 Arcade | P: commands | F2/Ctrl+]: terminal | F3: source | ?: help | Q: confirm exit")
-    result.add_argument("--version", action="version", version="DEV/OS " + __version__)
+    result.add_argument("--version", action="version", version="Vibe Reactor Console " + __version__)
     result.add_argument("--list-modes", action="store_true", help="list scenes without opening the terminal UI")
     result.add_argument("--list-presets", action="store_true", help="list safe preference presets without a terminal")
     result.add_argument("--integrate", nargs=4, metavar=("BASE", "LEFT", "RIGHT", "DEST"),
@@ -281,7 +281,7 @@ def main(argv=None):
     if curses is None:
         command.exit(1, "Python with curses is required (included on macOS and most Linux systems).\n")
     if not sys.stdin.isatty() or not sys.stdout.isatty():
-        command.exit(1, "Run directly in an interactive terminal: python3 -m devos\n")
+        command.exit(1, "Run directly in an interactive terminal: vibe-reactor-console (or python3 -m devos)\n")
     if not os.environ.get("TERM") or os.environ.get("TERM") == "dumb":
         os.environ["TERM"] = "xterm-256color"
     from .app import run
@@ -293,4 +293,4 @@ def main(argv=None):
     except curses.error as exc:
         command.exit(1, "Terminal initialization failed: {}\n".format(exc))
     except (OSError, ValueError, RuntimeError) as exc:
-        command.exit(1, "DEV/OS could not start: {}\n".format(exc))
+        command.exit(1, "Vibe Reactor Console could not start: {}\n".format(exc))
