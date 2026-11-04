@@ -40,6 +40,14 @@ python3 dev_console.py --screen arcade
 The reactor is available through **G → PLASMA REACTOR → Enter**.
 Press **Y** to make the visual fullscreen; **Esc** restores the layout.
 
+For a different mood, open the ASCII anime pianist at full size:
+
+```bash
+python3 dev_console.py --animation pianist --fullscreen visual
+```
+
+[![ASCII anime pianist in fullscreen](docs/screenshots/pianist.gif)](docs/screenshots/pianist.png)
+
 Optionally install the command in a virtual environment:
 
 ```bash
@@ -71,12 +79,16 @@ Screens share visual preferences, and switching screens keeps child processes al
 
 ## Graphics with a terminal-sized ego
 
-Choose from **12 visuals** using **G**:
+Choose from **13 visuals** using **G**:
 
 - Plasma Reactor, Gravity Well, Torus Knot and Twin Core.
 - Packet Garden, Voxel Tide and Asset Orrery.
 - T-pose Avatar, Solid Cube, Asset Sphere and a mathematically projected 4D Tesseract.
 - Ekza Asset Flow: identity → revision → rendition → approval → verification → consumer.
+- Anime Pianist: a large procedural ASCII portrait that blinks, sways and plays a
+  synthetic melody on a keyboard spanning the whole terminal. **P → Anime pianist**
+  or `--animation pianist --fullscreen visual` opens it immersively. There is no audio;
+  a `pulse_bpm` binding changes the tempo.
 
 Source scenes and graphics are independent. **Tab** chooses a scene: Ekza,
 Bare Metal (C and x86-64 assembly), Dev Lab, or Hyperspace. In either picker,
@@ -255,6 +267,7 @@ These apply when the dashboard owns the keyboard. Games have their own controls.
 | **+ / −** | Speed: 0.25×–8× |
 | **T / B / A** | Palette / background / visual auto-cycle |
 | **F / W / X / Y** | Next math function / math panel / fullscreen math / fullscreen visual |
+| `--fullscreen visual\|scope` | Start in an immersive view; temporary, never saved |
 | **U / N / R** | Project folder / next source / reread source |
 | **O / Shift+O / Z** | Next panel / previous panel / zoom |
 | **F2 / Ctrl+] / F3 / F4** | Terminal focus / focus / source display / other terminal |

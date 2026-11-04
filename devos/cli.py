@@ -102,6 +102,8 @@ def parser():
     result.add_argument("--bundled", action="store_true", help="use packaged source snapshots for this session instead of local repositories")
     result.add_argument("--theme", choices=("auto", *PALETTES), help="override each scene's default color palette")
     result.add_argument("--animation", choices=ANIMATION_BY_ID, help="choose a visual independently of the code scene")
+    result.add_argument("--fullscreen", choices=("visual", "scope"),
+                        help="start with the visual or math panel filling the terminal; Esc returns, nothing is saved")
     result.add_argument("--consumer", choices=CONSUMER_IDS, default="all", help="protocol example consumer (default: all)")
     result.add_argument("--auto-cycle", type=positive_float, metavar="SECONDS", help="automatically rotate visuals after this many active seconds")
     result.add_argument("--no-scope", action="store_true", help="hide the math panel")
@@ -244,7 +246,8 @@ def runtime_options(args):
             "consumer": args.consumer, "screen": args.screen, "intensity": args.intensity,
             "lab_binding": args.lab_binding, "data_mode": args.data_mode, "arena_mode": args.agents,
             "binding_config": args.binding_config, "director_enabled": args.director_enabled,
-            "visual_time": args.visual_time, "protocol_time": args.protocol_time, "paused": args.paused}
+            "visual_time": args.visual_time, "protocol_time": args.protocol_time, "paused": args.paused,
+            "fullscreen": args.fullscreen}
 
 
 def main(argv=None):

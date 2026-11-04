@@ -250,6 +250,7 @@ class Renderer:
             "While INPUT: all text goes to child. Ctrl+] returns to dashboard.",
             "B native/black background / T palette / W scope / F math / A auto visuals",
             "P > Math scope: choose function, fullscreen or independent auto-cycle",
+            "P > Anime pianist: ASCII portrait at full size; synthetic melody, no audio",
             "E demo event / H handoff / S save now / settings autosave / SPACE pause",
             "Replay: SPACE play, [ ] seek, P > Replay / next failure",
             "Replay: comma/period speed / M bookmark / } next marker / P capsule",

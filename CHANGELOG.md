@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.0 — 2026-11-05
+
+- Added the Anime Pianist visual: a large procedural ASCII portrait of an anime girl at a piano. Hair, face, dress, sleeves and hands are drawn from scalable art-unit geometry, so the portrait fills a 48×16 terminal or a 240×60 one, with a piano keyboard across the whole width.
+- The portrait blinks on a deterministic schedule, the irises wander, long strands sway with the intensity level, hands travel between keys of a synthetic two-hand melody, pressed keys glow, notes float upward and the mouth opens on the melody's top note. A `pulse_bpm` binding sets the tempo; there is no audio.
+- Added `P → Anime pianist / full size`, which selects the visual and opens the immersive view, and the `--fullscreen visual|scope` start-up option. Fullscreen remains temporary view state outside saved preferences, presets and capsules.
+- Rendering stays pure and deterministic: the static portrait layer is cached per viewport, the whole frame is a function of time, size and bindings, and it replays identically. Help and command search mention the new view.
+- Validation: new pianist tests cover bounds and ASCII output at eight sizes, repeatability, blinking, melody/key highlighting, floating notes, tempo bindings, palette action, CLI flag, fullscreen rendering from 48×16 to 240×60 and an actual curses start-up in fullscreen. Added actual Renderer PNG/GIF previews. No new dependencies, settings writes or model calls.
+
 ## 0.13.1 — 2026-10-31
 
 - Named the public project Vibe Reactor Console (`vibe-reactor-console`) and added English repository and package descriptions.

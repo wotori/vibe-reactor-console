@@ -38,6 +38,8 @@ def catalog():
                ("scope-auto", "Math scope / auto-cycle", "Toggle automatic rotation of synthetic mathematical functions."),
                ("scope-zoom", "Math scope / fullscreen", "Open the mathematical panel at full size; Esc returns."),
                ("visual-fullscreen", "Visual / fullscreen", "Expand the current 3D animation; Y or Esc returns."),
+               ("pianist", "Anime pianist / full size",
+                "Select the ASCII pianist portrait and expand it; a synthetic melody, no audio. Y or Esc returns."),
                ("source-folder", "Source / choose project folder", "Read random code excerpts from a local project; U opens the path editor."),
                ("binding-settings", "Visual Lab / edit binding", "Edit source, ranges, linear/log transform, smoothing and missing policy."),
                ("director", "Spectator / event director", "Toggle finite event-driven visual changes; terminal focus stays yours."),

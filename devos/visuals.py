@@ -7,6 +7,7 @@ from types import MappingProxyType
 from .effects import (render_asset_orrery, render_gravity_well, render_packet_garden,
                       render_torus_knot, render_twin_core, render_voxel_tide)
 from .graphics import Pixel, line_cells, wireframe
+from .pianist import render_pianist
 from .reactor import render_reactor
 from .surfaces import render_surface
 
@@ -115,6 +116,9 @@ ANIMATIONS = (
     VisualSpec("asset-orrery", "ASSET ORRERY", "Asset cubes and immutable revisions on stable nested orbits.",
                render_asset_orrery, "ASSET IDENTITIES / REVISION SATELLITES / ORBITS",
                parameters=("energy", "particle_count", "event_sequence")),
+    VisualSpec("pianist", "ANIME PIANIST", "A large ASCII anime portrait playing a synthetic melody on a full-width keyboard.",
+               render_pianist, "PROCEDURAL PORTRAIT / SYNTHETIC MELODY / NO AUDIO", 12, 4,
+               parameters=("energy", "pulse_bpm")),
 )
 ANIMATION_BY_ID = {item.id: item for item in ANIMATIONS}
 

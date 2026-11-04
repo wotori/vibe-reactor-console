@@ -52,7 +52,7 @@ class Session:
                  background="terminal", animation=None, consumer="all", fps=60, auto_cycle=0, scope=True,
                  screen="cockpit", intensity="calm", lab_binding="online", data_mode="auto", arena_mode="demo",
                  binding_config=None, director_enabled=False, visual_time=0, protocol_time=0, paused=False,
-                 scope_mode="harmonics", scope_auto_cycle=0):
+                 scope_mode="harmonics", scope_auto_cycle=0, fullscreen=None):
         self.seed = seed
         self.sources = sources if sources is not None else SourceProvider()
         self.mode_id = mode
@@ -118,6 +118,8 @@ class Session:
         self._last_event, self._event_time = None, None
         self.simulations = {}
         self.activate(mode)
+        if fullscreen:
+            self.toggle_fullscreen(fullscreen)
 
     @property
     def sim(self):
@@ -844,6 +846,10 @@ class Session:
             self.toggle_fullscreen("scope")
         elif action == "visual-fullscreen":
             self.toggle_fullscreen("visual")
+        elif action == "pianist":
+            self.choose_animation("pianist")
+            if self.fullscreen_panel != "visual":
+                self.toggle_fullscreen("visual")
         elif action == "auto":
             self.cycle_option("auto_cycle")
 
